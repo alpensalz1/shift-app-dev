@@ -115,7 +115,7 @@ export default function SalaryPage() {
           <CardContent className="pt-4 pb-4 text-center">
             <Clock className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
             <p className="text-2xl font-bold tabular-nums">{stats.totalHours}h</p>
-            <p className="text-xs text-muted-foreground">{monthLabel}の勤日儢</p>
+            <p className="text-xs text-muted-foreground">{monthLabel}の勤務</p>
           </CardContent>
         </Card>
         <Card>

@@ -35,13 +35,13 @@ export function BottomNav() {
                 isActive
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <item.icon className={cn('h-5 w-5', isActive && 'stroke-[2.5]')} />
-                <span className="text-[10px] font-medium">{item.label}</span>
-              </Link>
-            )
-          })}
+              )}
+            >
+              <item.icon className={cn('h-5 w-5', isActive && 'stroke-[2.5]')} />
+              <span className="text-[10px] font-medium">{item.label}</span>
+            </Link>
+          )
+        })}
       </div>
     </nav>
   )

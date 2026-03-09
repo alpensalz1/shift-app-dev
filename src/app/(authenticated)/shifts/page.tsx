@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed } from '@/types/database'
-import { getSubmissionPeriod, generateTimeSlots, formatTime } from '@/lib/utils'
+import { getSubmissionPeriod, generateTimeSlots, formatTime, isValid15MinTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -21,7 +21,7 @@ import {
 import { ja } from 'date-fns/locale'
 import { CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, Trash2, History } from 'lucide-react'
 
-const TIME_SLOTS = generateTimeSlots(9, 30)
+const TIME_SLOTS = generateTimeSlots(9, 24)
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
 type ViewMode = 'submit' | 'history'
@@ -43,7 +43,7 @@ export default function ShiftsPage() {
   const today = new Date()
   const period = getSubmissionPeriod(today)
 
-  // === 蕥歴モード ===
+  // === 履歴モード ===
   const [historyMonth, setHistoryMonth] = useState(() => new Date())
   const [historyShifts, setHistoryShifts] = useState<ShiftFixed[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -126,6 +126,16 @@ export default function ShiftsPage() {
 
   const handleSubmit = async () => {
     if (!staff || selectedDates.length === 0) return
+    if (!isValid15MinTime(startTime) || !isValid15MinTime(endTime)) {
+      setMessage('時間は15分刻みで指定してください')
+      return
+    }
+    const [sh] = startTime.split(':').map(Number)
+    const [eh] = endTime.split(':').map(Number)
+    if (eh * 60 + parseInt(endTime.split(':')[1]) <= sh * 60 + parseInt(startTime.split(':')[1])) {
+      setMessage('終了時間は開始時間より後にしてください')
+      return
+    }
     setSubmitting(true)
     setMessage('')
     const rows = selectedDates.map((date) => ({

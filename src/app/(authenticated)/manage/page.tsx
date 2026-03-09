@@ -26,7 +26,6 @@ import {
   X,
   Loader2,
   Users,
-  AlertCircle,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -117,6 +116,25 @@ export default function ManagePage() {
   // 選択した日の希望一覧
   const selectedRequests = selectedDate ? (dateMap[selectedDate] || []) : []
   const selectedFixed = selectedDate ? (fixedMap[selectedDate] || []) : []
+
+  // 必要人数の充足状況を計算
+  const staffingStatus = useMemo(() => {
+    if (!selectedDate) return []
+    return configs.map((cfg) => {
+      const filled = selectedFixed.filter(
+        (f) => f.shop_id === cfg.shop_id && f.type === cfg.type
+      ).length
+      const shopName = cfg.shop_id === 1 ? '三軒茶屋' : '下北沢'
+      return {
+        shopId: cfg.shop_id,
+        shopName,
+        type: cfg.type,
+        required: cfg.required_count,
+        filled,
+        diff: filled - cfg.required_count,
+      }
+    })
+  }, [selectedDate, selectedFixed, configs])
 
   // シフト確定: 希望者をshifts_fixedに追加
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
@@ -258,6 +276,41 @@ export default function ManagePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* 必要人数の充足状況 */}
+            {staffingStatus.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {staffingStatus.map((s) => (
+                  <div
+                    key={`${s.shopId}-${s.type}`}
+                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs ${
+                      s.diff >= 0
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-medium text-[11px]">{s.shopName}</div>
+                      <span className={`px-1.5 py-0.5 rounded-full ${
+                        s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                      }`}>{s.type}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-base font-bold ${
+                        s.diff >= 0 ? 'text-emerald-700' : 'text-red-600'
+                      }`}>
+                        {s.filled}/{s.required}
+                      </div>
+                      <div className={`text-[10px] ${
+                        s.diff >= 0 ? 'text-emerald-600' : 'text-red-500'
+                      }`}>
+                        {s.diff > 0 ? `+${s.diff}名` : s.diff === 0 ? '充足' : `${s.diff}名不足`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* 確定済み */}
             {selectedFixed.length > 0 && (
               <div>
@@ -278,7 +331,7 @@ export default function ManagePage() {
                             f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                           }`}>{f.type}</span>
                           <span className="text-xs text-muted-foreground">
-                            店舗{f.shop_id}
+                            {f.shop_id === 1 ? '三茶' : '下北'}
                           </span>
                         </div>
                         <button

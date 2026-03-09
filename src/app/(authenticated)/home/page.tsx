@@ -105,7 +105,7 @@ export default function HomePage() {
                             </span>
                             <span className="text-xs text-muted-foreground">
                               <Users className="inline h-3 w-3 mr-0.5" />
-                              {shikomShifts.length~名
+                              {shikomShifts.length}名
                             </span>
                           </div>
                           <div className="space-y-1">
