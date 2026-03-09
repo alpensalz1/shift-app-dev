@@ -57,7 +57,7 @@ export default function ManagePage() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-ft font-semibold mb-4">書き込みはみすかかっいかぃえい</h2>
+        <h2 className="text-ft font-semibold mb-4">æ¸ãè¾¼ã¿ã¯ã¿ãããã£ããããã</h2>
       </div>
       {requests.map((request) => (
         <div key={request.id} className="rounded-lg border border-input p-4">
