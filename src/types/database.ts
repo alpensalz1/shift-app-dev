@@ -49,12 +49,41 @@ export interface ShiftFixed {
   created_at: string
 }
 
+// 社員の休み希望テーブル
+export interface OffRequest {
+  id: number
+  staff_id: number
+  date: string
+  type: '休み' | '仕込みのみ'
+  created_at: string
+  updated_at: string
+}
+
+// 店舗ごとの社員配属優先ルール
+export interface ShiftRule {
+  id: number
+  shop_id: number
+  staff_id: number
+  priority: number
+  is_active: boolean
+  created_at: string
+}
+
 // JOIN 結果用
+export interface ShiftRuleWithStaff extends ShiftRule {
+  staffs: Pick<Staff, 'name'>
+  shops: Pick<Shop, 'name'>
+}
+
 export interface ShiftFixedWithStaff extends ShiftFixed {
   staffs: Pick<Staff, 'name'>
   shops: Pick<Shop, 'name'>
 }
 
 export interface ShiftRequestWithStaff extends ShiftRequest {
+  staffs: Pick<Staff, 'name'>
+}
+
+export interface OffRequestWithStaff extends OffRequest {
   staffs: Pick<Staff, 'name'>
 }
