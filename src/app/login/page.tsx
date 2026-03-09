@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { storeStaff } from '@/lib/auth'
@@ -15,6 +15,20 @@ export default function LoginPage() {
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [staffNames, setStaffNames] = useState<string[]>([])
+  const [namesLoading, setNamesLoading] = useState(true)
+
+  useEffect(() => {
+    supabase
+      .from('staffs')
+      .select('name')
+      .eq('is_active', true)
+      .order('id', { ascending: true })
+      .then(({ data }) => {
+        if (data) setStaffNames(data.map((s) => s.name))
+        setNamesLoading(false)
+      })
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,16 +74,24 @@ export default function LoginPage() {
               <label className="text-sm font-medium text-foreground" htmlFor="name">
                 名前
               </label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="例: 田中"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoComplete="username"
-                className="h-12 text-base"
-              />
+              {namesLoading ? (
+                <div className="h-12 flex items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <select
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full h-12 rounded-md border border-input bg-background px-3 text-base focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">選択してください</option>
+                  {staffNames.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground" htmlFor="token">
