@@ -89,12 +89,12 @@ export default function HomePage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
-                    {shop.name}��店
+                    {shop.name}店
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {!hasShifts ? (
-                    <p className="text-sm text-muted-foreground">本日のソソきはありません(p className="text-sm text-muted-foreground">本日のソソきはありません</p>
+                    <p className="text-sm text-muted-foreground">本日のシフトはありません</p>
                   ) : (
                     <div className="space-y-3">
                       {shikomShifts.length > 0 && (
@@ -105,7 +105,7 @@ export default function HomePage() {
                             </span>
                             <span className="text-xs text-muted-foreground">
                               <Users className="inline h-3 w-3 mr-0.5" />
-                              {shikomShifts.length}名
+                              {shikomShifts.length~名
                             </span>
                           </div>
                           <div className="space-y-1">
@@ -124,7 +124,7 @@ export default function HomePage() {
                         <div>
                           <div className="flex items-center gap-1.5 mb-1.5">
                             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                              営桭
+                              営業
                             </span>
                             <span className="text-xs text-muted-foreground">
                               <Users className="inline h-3 w-3 mr-0.5" />
