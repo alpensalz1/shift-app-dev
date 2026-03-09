@@ -34,6 +34,5 @@ export default function RootLayout({
         {children}
       </body>
     </html>
-  
-  }
-(4
+  )
+}

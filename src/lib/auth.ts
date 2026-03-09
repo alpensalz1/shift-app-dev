@@ -1,6 +1,6 @@
 'use client'
 
-import { Staff } from 'A/types/database'
+import { Staff } from '@/types/database'
 
 const STORAGE_KEY = 'shift_app_staff'
 

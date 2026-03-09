@@ -47,35 +47,110 @@ export default function HomePage() {
       .subscribe()
 
     return () => {
-      channel.unsubscribe()
+      supabase.removeChannel(channel)
     }
   }, [today])
 
+  const getShiftsForShop = (shopId: number, type: string) =>
+    shifts.filter((s) => s.shop_id === shopId && s.type === type)
+
   return (
     <div className="space-y-4">
-      <div className="mb-4">
-        <h2 className="text-ft font-semibold">{todayLabel}</h2>
-        {shifts.length === 0 ? (
-          <p className="text-sm text-muted-foreground px-4">リアルオプルを版报牣��湾都は差はなはかちつかぃえい１[]L3�/</p>
-        ) : (shifts.map((shift) => (
-          <Card key={shift.id} className="cursor-default hover:bg-accent/50">
-            <CardHeader>
-              <CardTitle className="text-lg">{shift.staffs.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">{skift.shops.name}</p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2" src-avay-jiwza="">
-                <Clock className="h-4 w-4" />
-                <div className="text-sm font-medium">
-                  {formatTime(shift.start_time)} •{formatTime(shift.end_time)}
+      <div>
+        <h2 className="text-lg font-bold">本日のみんな</h2>
+        <p className="text-sm text-muted-foreground">{todayLabel}</p>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader className="pb-3">
+                <div className="h-5 bg-muted rounded w-24" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="h-4 bg-muted rounded w-full" />
+                  <div className="h-4 bg-muted rounded w-3/4" />
                 </div>
-                <Users className="h-4 w-4 text-muted-foreground ml-auto" />
-              </div>
-            </CardContent>
+              </CardContent>
             </Card>
           ))}
         </div>
-      </div>
-  
-  }
-*
+      ) : (
+        <div className="space-y-3">
+          {SHOPS.map((shop) => {
+            const shikomShifts = getShiftsForShop(shop.id, '仕込み')
+            const eigyoShifts = getShiftsForShop(shop.id, '営業')
+            const hasShifts = shikomShifts.length > 0 || eigyoShifts.length > 0
+
+            return (
+              <Card key={shop.id}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    {shop.name}��店
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!hasShifts ? (
+                    <p className="text-sm text-muted-foreground">本日のソソきはありません(p className="text-sm text-muted-foreground">本日のソソきはありません</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {shikomShifts.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                              仕込み
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              <Users className="inline h-3 w-3 mr-0.5" />
+                              {shikomShifts.length}名
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {shikomShifts.map((s) => (
+                              <div key={s.id} className="flex items-center justify-between text-sm pl-2">
+                                <span className="font-medium">{s.staffs.name}</span>
+                                <span className="text-muted-foreground tabular-nums">
+                                  {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {eigyoShifts.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                              営桭
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              <Users className="inline h-3 w-3 mr-0.5" />
+                              {eigyoShifts.length}名
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {eigyoShifts.map((s) => (
+                              <div key={s.id} className="flex items-center justify-between text-sm pl-2">
+                                <span className="font-medium">{s.staffs.name}</span>
+                                <span className="text-muted-foreground tabular-nums">
+                                  {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
