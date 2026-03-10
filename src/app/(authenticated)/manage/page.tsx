@@ -113,7 +113,10 @@ function ShiftConfirmTab() {
   )
   const firstDow = getDay(startOfMonth(selectedMonth))
 
-  const selectedRequests = selectedDate ? (dateMap[selectedDate] || []) : []
+  const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2 }
+  const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
+    .slice()
+    .sort((a, b) => (typeOrder[a.staffs.employment_type] ?? 1) - (typeOrder[b.staffs.employment_type] ?? 1))
   const selectedFixed = selectedDate ? (fixedMap[selectedDate] || []) : []
 
   const staffingStatus = useMemo(() => {
@@ -273,7 +276,7 @@ function ShiftConfirmTab() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">{req.staffs.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${req.staffs.employment_type === '社員' ? 'bg-purple-100 text-purple-800' : 'bg-zinc-100 text-zinc-600'}`}>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${req.staffs.employment_type === '社員' ? 'bg-purple-100 text-purple-800' : req.staffs.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : 'bg-zinc-100 text-zinc-600'}`}>
                               {req.staffs.employment_type}
                             </span>
                           </div>
@@ -336,7 +339,7 @@ function RulesTab() {
     setLoading(true)
     const [rulesRes, staffsRes] = await Promise.all([
       supabase.from('shift_rules').select('*, staffs(name)').order('shop_id').order('priority'),
-      supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
+      supabase.from('staffs').select('*').eq('is_active', true).in('employment_type', ['社員', '役員']),
     ])
     if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
     if (staffsRes.data) {
