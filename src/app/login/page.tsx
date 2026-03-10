@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { storeStaff } from '@/lib/auth'
@@ -17,6 +17,43 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [staffNames, setStaffNames] = useState<string[]>([])
   const [namesLoading, setNamesLoading] = useState(true)
+  const tapCountRef = useRef(0)
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [adminToken, setAdminToken] = useState('')
+  const [adminError, setAdminError] = useState('')
+  const [adminLoading, setAdminLoading] = useState(false)
+
+  const handleLogoTap = () => {
+    tapCountRef.current += 1
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0
+      setShowAdminLogin(true)
+      return
+    }
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0
+    }, 2000)
+  }
+
+  const handleAdminLogin = async () => {
+    setAdminLoading(true)
+    setAdminError('')
+    const { data, error: dbError } = await supabase
+      .from('staffs')
+      .select('*')
+      .eq('token', adminToken.trim())
+      .single()
+    setAdminLoading(false)
+    if (dbError || !data) {
+      setAdminError('トークンが違います')
+      return
+    }
+    storeStaff(data)
+    setShowAdminLogin(false)
+    router.push('/')
+  }
 
   useEffect(() => {
     supabase
@@ -62,7 +99,7 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-screen px-4 bg-gradient-to-b from-zinc-50 to-zinc-100">
       <Card className="w-full max-w-sm shadow-lg border-0">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-zinc-900">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-zinc-900 cursor-pointer select-none" onClick={handleLogoTap}>
             <CalendarDays className="h-7 w-7 text-white" />
           </div>
           <CardTitle className="text-xl">シフト管理</CardTitle>
@@ -130,6 +167,32 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+
+      {showAdminLogin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowAdminLogin(false)}>
+          <div className="bg-white rounded-xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold mb-4">管理者ログイン</h2>
+            <Input
+              type="text"
+              placeholder="トークンを入力"
+              value={adminToken}
+              onChange={e => setAdminToken(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdminLogin()}
+              className="mb-3"
+              autoFocus
+            />
+            {adminError && <p className="text-red-500 text-sm mb-3">{adminError}</p>}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowAdminLogin(false); setAdminToken(''); setAdminError('') }}>
+                キャンセル
+              </Button>
+              <Button className="flex-1" onClick={handleAdminLogin} disabled={adminLoading}>
+                {adminLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'ログイン'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
