@@ -25,7 +25,7 @@ const TIME_SLOTS = generateTimeSlots(9, 24)
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 
 type ViewMode = 'submit' | 'history'
-type OffType = '出勤' | '休み' | '仕込みのみ'
+type OffType = '出勤' | '休み' | '仕込みのみ' | '営業のみ'
 
 // =============================================
 // 社員向け: 休み希望UI
@@ -74,13 +74,13 @@ function EmployeeSubmitView() {
     fetchExisting()
   }, [fetchExisting])
 
-  // 日付タップ: 出勤 → 休み → 仕込みのみ → 出勤
+  // 日付タップ: 出勤 → 休み → 仕込みのみ → 営業のみ → 出勤
   const toggleDate = (date: Date) => {
     if (!isInPeriod(date)) return
     const key = format(date, 'yyyy-MM-dd')
     setOffMap((prev) => {
       const cur = prev[key] ?? '出勤'
-      const next: OffType = cur === '出勤' ? '休み' : cur === '休み' ? '仕込みのみ' : '出勤'
+      const next: OffType = cur === '出勤' ? '休み' : cur === '休み' ? '仕込みのみ' : cur === '仕込みのみ' ? '営業のみ' : '出勤'
       const updated = { ...prev }
       if (next === '出勤') {
         delete updated[key]
@@ -93,7 +93,8 @@ function EmployeeSubmitView() {
 
   const offCount = Object.values(offMap).filter((v) => v === '休み').length
   const prepOnlyCount = Object.values(offMap).filter((v) => v === '仕込みのみ').length
-  const totalCount = offCount + prepOnlyCount
+  const salesOnlyCount = Object.values(offMap).filter((v) => v === '営業のみ').length
+  const totalCount = offCount + prepOnlyCount + salesOnlyCount
 
   const handleSave = async () => {
     if (!staff) return
@@ -163,7 +164,7 @@ function EmployeeSubmitView() {
           対象期間: <span className="font-medium text-foreground">{periodLabel}</span>
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          タップで 出勤 → 休み → 仕込みのみ と切り替わります
+          タップで 出勤 → 休み → 仕込みのみ → 営業のみ と切り替わります
         </p>
       </div>
 
@@ -204,6 +205,10 @@ function EmployeeSubmitView() {
                 bgClass = 'bg-amber-100 ring-1 ring-amber-300'
                 textClass = 'text-amber-700'
                 label = '仕込'
+              } else if (offType === '営業のみ') {
+                bgClass = 'bg-blue-100 ring-1 ring-blue-300'
+                textClass = 'text-blue-700'
+                label = '営業'
               }
 
               return (
@@ -241,6 +246,10 @@ function EmployeeSubmitView() {
             <span className="text-muted-foreground">仕込みのみ</span>
             <span className="font-medium">{prepOnlyCount}日</span>
           </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">営業のみ</span>
+            <span className="font-medium">{salesOnlyCount}日</span>
+          </div>
           <div className="flex items-center justify-between text-sm border-t pt-2">
             <span className="font-medium">合計オフ</span>
             <span className={`font-bold text-base ${totalCount >= 5 && totalCount <= 6 ? 'text-emerald-600' : 'text-foreground'}`}>
@@ -276,7 +285,7 @@ function PartTimeSubmitView() {
 
   const [selectedDates, setSelectedDates] = useState<Date[]>([])
   const [shiftType, setShiftType] = useState<'仕込み・営業' | '仕込み' | '営業'>('仕込み・営業')
-  const [startTime, setStartTime] = useState('17:00')
+  const [startTime, setStartTime] = useState('14:00')
   const [endTime, setEndTime] = useState('24:00')
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -429,7 +438,7 @@ function PartTimeSubmitView() {
               <label className="text-sm font-medium">種別</label>
               <div className="flex gap-2">
                 {(['仕込み・営業', '仕込み', '営業'] as const).map((t) => (
-                  <button key={t} onClick={() => setShiftType(t)}
+                  <button key={t} onClick={() => { setShiftType(t); if (t === '仕込み・営業') { setStartTime('14:00'); setEndTime('24:00'); } else if (t === '仕込み') { setStartTime('14:00'); setEndTime('17:00'); } else { setStartTime('17:00'); setEndTime('24:00'); } }}
                     className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                       shiftType === t ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                     }`}>{t}</button>
