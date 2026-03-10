@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed, OffRequest } from '@/types/database'
 import { getSubmissionPeriod, generateTimeSlots, formatTime, isValid15MinTime } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/button
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   format,
@@ -360,7 +360,13 @@ function PartTimeSubmitView() {
     fetchExisting()
   }
 
-  const periodLabel = `${format(period.start, 'M/d')}〜${format(period.end, 'M/d')}`期間: <span className="font-medium text-foreground">{periodLabel}</span>
+  const periodLabel = `${format(period.start, 'M/d')}〜${format(period.end, 'M/d')}`
+
+  return (
+    <>
+      <div>
+        <p className="text-sm text-muted-foreground">
+          期間: <span className="font-medium text-foreground">{periodLabel}</span>
         </p>
       </div>
 
