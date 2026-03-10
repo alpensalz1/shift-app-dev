@@ -8,7 +8,7 @@ export interface Staff {
   id: number
   name: string
   token: string
-  employment_type: '社員' | 'アルバイト'
+  employment_type: '社員' | 'アルバイト' | '役員'
   wage: number
   is_active: boolean
   created_at: string
@@ -54,7 +54,7 @@ export interface OffRequest {
   id: number
   staff_id: number
   date: string
-  type: '休み' | '仕込みのみ'
+  type: '休み' | '仕込みのみ' | '営業のみ'
   created_at: string
   updated_at: string
 }
