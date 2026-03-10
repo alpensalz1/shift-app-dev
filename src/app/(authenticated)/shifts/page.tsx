@@ -686,7 +686,7 @@ function HistoryView() {
 export default function ShiftsPage() {
   const staff = getStoredStaff()
   const [viewMode, setViewMode] = useState<ViewMode>('submit')
-  const isEmployee = staff?.employment_type === '社員'
+  const isEmployee = staff?.employment_type === '社員' || staff?.employment_type === '役員'
 
   return (
     <div className="space-y-4">
