@@ -189,7 +189,7 @@ function ShiftConfirmTab() {
                     ${dow === 6 && !isSel ? 'text-blue-500' : ''}
                   `}>
                   <span className="font-medium">{format(date, 'd')}</span>
-                  {reqs.length > 0 && !isSel && <span className="text-[8px] leading-tight text-amber-600">{reqs.length}名希望</span>}
+                  {reqs.length > 0 && !isSel && (() => { const aC = reqs.filter(r => r.staffs.employment_type === 'アルバイト').length; const eC = reqs.filter(r => r.staffs.employment_type !== 'アルバイト').length; return <span className="text-[8px] leading-tight text-amber-600 flex flex-col">{aC > 0 && <span>アルバイト{aC}名希望</span>}{eC > 0 && <span>社员{eC}名希望</span>}</span> })()}
                   {fixed.length > 0 && !isSel && <span className="text-[8px] leading-tight text-emerald-600">{fixed.length}名確定</span>}
                 </button>
               )
