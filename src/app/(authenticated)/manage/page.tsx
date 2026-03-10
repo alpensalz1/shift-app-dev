@@ -31,6 +31,8 @@ import {
   Wand2,
   ChevronUp,
   ChevronDown,
+  Banknote,
+  UserPlus,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -766,7 +768,285 @@ function AutoGenerateTab() {
 // =============================================
 // メインページ
 // =============================================
-type ManageTab = 'confirm' | 'rules' | 'auto'
+
+// ==============================================
+// タブ人件費：アルバイト人件費
+// ==============================================
+function LaborCostTab() {
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date())
+  const [loading, setLoading] = useState(false)
+  const [staffs, setStaffs] = useState<Staff[]>([])
+  const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
+
+  const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
+  const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const [sRes, fRes] = await Promise.all([
+        supabase.from('staffs').select('*').eq('is_active', true),
+        supabase.from('shifts_fixed').select('*').gte('date', monthStart).lte('date', monthEnd),
+      ])
+      if (sRes.data) setStaffs(sRes.data)
+      if (fRes.data) setFixedShifts(fRes.data)
+      setLoading(false)
+    }
+    load()
+  }, [monthStart, monthEnd])
+
+  const calcHours = (start: string, end: string) => {
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    return (eh * 60 + em - (sh * 60 + sm)) / 60
+  }
+
+  const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
+  const staffCosts = partTimers.map(staff => {
+    const shifts = fixedShifts.filter(f => f.staff_id === staff.id)
+    const totalHours = shifts.reduce((sum, f) => sum + calcHours(f.start_time, f.end_time), 0)
+    const totalCost = Math.round(totalHours * staff.wage)
+    return { staff, shiftCount: shifts.length, totalHours, totalCost }
+  })
+  const grandTotal = staffCosts.reduce((sum, s) => sum + s.totalCost, 0)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Banknote className="h-5 w-5" />
+          アルバイト人件費
+        </h2>
+        <p className="text-sm text-muted-foreground">確定シフトをもとに算出</p>
+      </div>
+
+      <div className="flex items-center justify-center gap-4">
+        <button onClick={() => setSelectedMonth(m => subMonths(m, 1))}
+          className="p-2 rounded-lg hover:bg-accent transition-colors">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <span className="text-base font-semibold min-w-[120px] text-center">
+          {format(selectedMonth, 'yyyy年M月', { locale: ja })}
+        </span>
+        <button onClick={() => setSelectedMonth(m => addMonths(m, 1))}
+          className="p-2 rounded-lg hover:bg-accent transition-colors">
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-4 space-y-2">
+            {staffCosts.map(({ staff, shiftCount, totalHours, totalCost }) => (
+              <div key={staff.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                <div>
+                  <div className="font-medium text-sm">{staff.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {shiftCount}シフト / {totalHours.toFixed(1)}時間 / 時給{staff.wage}円
+                  </div>
+                </div>
+                <div className="font-bold text-sm">{totalCost.toLocaleString()}円</div>
+              </div>
+            ))}
+            {staffCosts.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                この月の確定シフトはありません
+              </p>
+            )}
+            {grandTotal > 0 && (
+              <div className="pt-3 border-t flex items-center justify-between">
+                <span className="font-semibold">合計人件費</span>
+                <span className="text-xl font-bold">{grandTotal.toLocaleString()}円</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+
+// ==============================================
+// タブスタッフ管理
+// ==============================================
+function StaffManagementTab() {
+  const [staffs, setStaffs] = useState<Staff[]>([])
+  const [loading, setLoading] = useState(false)
+  const [updating, setUpdating] = useState<number | null>(null)
+  const [message, setMessage] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState<Staff['employment_type']>('アルバイト')
+  const [newWage, setNewWage] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const fetchStaffs = async () => {
+    setLoading(true)
+    const { data } = await supabase.from('staffs').select('*').order('name')
+    if (data) setStaffs(data)
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchStaffs() }, [])
+
+  const handleChangeType = async (staff: Staff, type: Staff['employment_type']) => {
+    setUpdating(staff.id)
+    setMessage('')
+    const { error } = await supabase
+      .from('staffs').update({ employment_type: type }).eq('id', staff.id)
+    if (error) {
+      setMessage('更新失敗: ' + error.message)
+    } else {
+      setMessage(staff.name + 'を' + type + 'に変更しました')
+      fetchStaffs()
+    }
+    setUpdating(null)
+  }
+
+  const handleAdd = async () => {
+    if (!newName.trim()) return
+    setAdding(true)
+    setMessage('')
+    const token = Math.random().toString(36).slice(2, 10)
+    const { error } = await supabase.from('staffs').insert({
+      name: newName.trim(),
+      token,
+      employment_type: newType,
+      wage: parseInt(newWage) || 0,
+      is_active: true,
+    })
+    if (error) {
+      setMessage('登録失敗: ' + error.message)
+    } else {
+      setMessage(newName + 'を登録しました（トークン: ' + token + '）')
+      setNewName('')
+      setNewWage('')
+      fetchStaffs()
+    }
+    setAdding(false)
+  }
+
+  const typeColor = (t: string) =>
+    t === '社員' ? 'bg-purple-100 text-purple-800' :
+    t === '役員' ? 'bg-amber-100 text-amber-800' :
+    'bg-zinc-100 text-zinc-600'
+
+  const activeStaffs = staffs.filter(s => s.is_active)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <UserPlus className="h-5 w-5" />
+          スタッフ管理
+        </h2>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">新規スタッフ登録</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <input
+            type="text"
+            placeholder="名前"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            className="w-full px-3 py-2 text-sm border rounded-lg bg-background"
+          />
+          <div className="flex gap-2">
+            <select
+              value={newType}
+              onChange={e => setNewType(e.target.value as Staff['employment_type'])}
+              className="flex-1 px-3 py-2 text-sm border rounded-lg bg-background"
+            >
+              <option value="アルバイト">アルバイト</option>
+              <option value="社員">社員</option>
+              <option value="役員">役員</option>
+            </select>
+            <input
+              type="number"
+              placeholder="時給"
+              value={newWage}
+              onChange={e => setNewWage(e.target.value)}
+              className="w-28 px-3 py-2 text-sm border rounded-lg bg-background"
+            />
+          </div>
+          <Button
+            onClick={handleAdd}
+            disabled={adding || !newName.trim()}
+            className="w-full"
+            size="sm"
+          >
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : '登録'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {loading ? (
+        <div className="text-center py-4">
+          <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+        </div>
+      ) : (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">スタッフ一覧（{activeStaffs.length}名）</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {activeStaffs.map(staff => (
+              <div key={staff.id} className="flex items-center justify-between p-2.5 rounded-lg border">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm">{staff.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColor(staff.employment_type)}`}>
+                    {staff.employment_type}
+                  </span>
+                  {staff.employment_type === 'アルバイト' && (
+                    <span className="text-xs text-muted-foreground">時給{staff.wage}円</span>
+                  )}
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  {staff.employment_type === 'アルバイト' && (
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        disabled={updating === staff.id}
+                        onClick={() => handleChangeType(staff, '社員')}>
+                        →社員
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        disabled={updating === staff.id}
+                        onClick={() => handleChangeType(staff, '役員')}>
+                        →役員
+                      </Button>
+                    </>
+                  )}
+                  {staff.employment_type === '社員' && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                      disabled={updating === staff.id}
+                      onClick={() => handleChangeType(staff, '役員')}>
+                      →役員
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {message && (
+        <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>
+          {message}
+        </p>
+      )}
+    </div>
+  )
+}
+
+type ManageTab = 'confirm' | 'rules' | 'auto' | 'salary' | 'staff'
 
 export default function ManagePage() {
   const router = useRouter()
@@ -774,12 +1054,12 @@ export default function ManagePage() {
   const [activeTab, setActiveTab] = useState<ManageTab>('confirm')
 
   useEffect(() => {
-    if (currentStaff && currentStaff.employment_type !== '社員') {
+    if (currentStaff && currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員') {
       router.replace('/home')
     }
   }, [currentStaff, router])
 
-  if (!currentStaff || currentStaff.employment_type !== '社員') return null
+  if (!currentStaff || (currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員')) return null
 
   return (
     <div className="space-y-4">
@@ -806,11 +1086,27 @@ export default function ManagePage() {
           <Wand2 className="h-4 w-4" />
           自動生成
         </button>
+        <button onClick={() => setActiveTab('salary')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+            activeTab === 'salary' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}>
+          <Banknote className="h-4 w-4" />
+          アルバイト人件費
+        </button>
+        <button onClick={() => setActiveTab('staff')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+            activeTab === 'staff' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}>
+          <UserPlus className="h-4 w-4" />
+          スタッフ管理
+        </button>
       </div>
 
       {activeTab === 'confirm' && <ShiftConfirmTab />}
       {activeTab === 'rules' && <RulesTab />}
       {activeTab === 'auto' && <AutoGenerateTab />}
+      {activeTab === 'salary' && <LaborCostTab />}
+      {activeTab === 'staff' && <StaffManagementTab />}
     </div>
   )
 }
