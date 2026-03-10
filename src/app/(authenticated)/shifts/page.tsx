@@ -146,6 +146,43 @@ function EmployeeSubmitView() {
       if (error) hasError = true
     }
 
+    // shift_requests upsert: 出勤・仕込みのみ・営業のみ の日はシフト希望として登録
+    const shiftRows = allDates
+      .filter((d) => {
+        const key = format(d, 'yyyy-MM-dd')
+        const t = offMap[key] ?? '出勤'
+        return t !== '休み'
+      })
+      .map((d) => {
+        const key = format(d, 'yyyy-MM-dd')
+        const t = offMap[key] ?? '出勤'
+        const type = t === '仕込みのみ' ? '仕込み' : t === '営業のみ' ? '営業' : '仕込み・営業'
+        const st = t === '営業のみ' ? '17:00:00' : '14:00:00'
+        const et = t === '仕込みのみ' ? '17:00:00' : '24:00:00'
+        return { staff_id: staff!.id, date: key, type, start_time: st, end_time: et }
+      })
+
+    if (shiftRows.length > 0) {
+      const { error: srErr } = await supabase
+        .from('shift_requests')
+        .upsert(shiftRows, { onConflict: 'staff_id,date' })
+      if (srErr) { setSaving(false); setMessage('保存に失敗しました'); return }
+    }
+
+    // shift_requests delete: 休みの日は削除
+    const offDates = allDates
+      .filter((d) => (offMap[format(d, 'yyyy-MM-dd')] ?? '出勤') === '休み')
+      .map((d) => format(d, 'yyyy-MM-dd'))
+
+    if (offDates.length > 0) {
+      const { error: sdErr } = await supabase
+        .from('shift_requests')
+        .delete()
+        .eq('staff_id', staff!.id)
+        .in('date', offDates)
+      if (sdErr) { setSaving(false); setMessage('保存に失敗しました'); return }
+    }
+
     setSaving(false)
     if (hasError) {
       setMessage('保存に失敗しました')
