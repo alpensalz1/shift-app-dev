@@ -2,9 +2,12 @@ export interface Shop {
   id: number
   name: string
   created_at: string
+    shop_type?: '常設' | 'イベント'
+    color?: string
+    is_active?: boolean
 }
 
-export interface Staff {
+export interface Staff 
   id: number
   name: string
   token: string
@@ -13,6 +16,7 @@ export interface Staff {
   is_active: boolean
   shop_id: number
   created_at: string
+  deleted_at?: string | null
 }
 
 export interface ShiftConfig {
@@ -69,6 +73,23 @@ export interface ShiftRule {
   priority: number
   is_active: boolean
   created_at: string
+}
+
+export interface WageHistory {
+    id: number
+    staff_id: number
+    wage: number
+    effective_from: string
+    effective_to: string | null
+    created_at: string
+}
+
+export interface ClosedDate {
+    id: number
+    date: string
+    shop_id?: number | null
+    note?: string
+    created_at: string
 }
 
 // JOIN 結果用
