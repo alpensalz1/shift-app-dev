@@ -33,10 +33,9 @@ export function BottomNav() {
               className={cn(
                 'flex flex-col items-center justify-center gap-1 flex-1 h-full transition-colors',
                 isActive
-                  ? ''
+                  ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
               )}
-              style={isActive ? { color: 'var(--theme-color, #c2410c)' } : {}}
             >
               <item.icon className={cn('h-5 w-5', isActive && 'stroke-[2.5]')} />
               <span className="text-[10px] font-medium">{item.label}</span>
