@@ -154,6 +154,33 @@ function ShiftConfirmTab() {
     setConfirming(false)
   }
 
+  const handleConfirmBoth = async (req: RequestWithStaff, shopId: number) => {
+    setConfirming(true)
+    setMessage('')
+    const [r1, r2] = await Promise.all([
+      supabase.from('shifts_fixed').upsert(
+        { date: req.date, shop_id: shopId, type: '仕込み', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time },
+        { onConflict: 'staff_id,date,type' }
+      ),
+      supabase.from('shifts_fixed').upsert(
+        { date: req.date, shop_id: shopId, type: '営業', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time },
+        { onConflict: 'staff_id,date,type' }
+      ),
+    ])
+    if (r1.error || r2.error) setMessage('確定に失敗: ' + (r1.error?.message ?? r2.error?.message ?? ''))
+    else { setMessage(`${req.staffs.name}の仕込み・営業を一括確定しました`); fetchAll() }
+    setConfirming(false)
+  }
+
+  const handleReject = async (req: RequestWithStaff) => {
+    if (!window.confirm(`${req.staffs.name}（${req.date}）のシフト希望を却下しますか？`)) return
+    setConfirming(true)
+    const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
+    if (error) setMessage('却下に失敗: ' + error.message)
+    else { setMessage(`${req.staffs.name}のシフトを却下しました`); fetchAll() }
+    setConfirming(false)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-center gap-4">
@@ -300,6 +327,13 @@ function ShiftConfirmTab() {
                                 <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
                               </>
                             )}
+                            {req.type === '仕込み・営業' && (
+                              <>
+                                <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleConfirmBoth(req, 1)}>三茶 両方一括</Button>
+                                <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleConfirmBoth(req, 2)}>下北 両方一括</Button>
+                              </>
+                            )}
+                            <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
                           </div>
                         )}
                       </div>
@@ -887,6 +921,8 @@ function StaffManagementTab() {
   const [newType, setNewType] = useState<Staff['employment_type']>('アルバイト')
   const [newWage, setNewWage] = useState('')
   const [adding, setAdding] = useState(false)
+  const [editingWage, setEditingWage] = useState<number | null>(null)
+  const [wageInput, setWageInput] = useState('')
 
   const fetchStaffs = async () => {
     setLoading(true)
@@ -932,6 +968,25 @@ function StaffManagementTab() {
       fetchStaffs()
     }
     setAdding(false)
+  }
+
+  const handleDelete = async (staff: Staff) => {
+    if (!window.confirm(`${staff.name}を削除しますか？この操作は元に戻せません。`)) return
+    setUpdating(staff.id)
+    const { error } = await supabase.from('staffs').update({ is_active: false }).eq('id', staff.id)
+    if (error) setMessage('削除失敗: ' + error.message)
+    else { setMessage(staff.name + 'を削除しました'); fetchStaffs() }
+    setUpdating(null)
+  }
+
+  const handleUpdateWage = async (staff: Staff) => {
+    const parsed = parseInt(wageInput)
+    if (isNaN(parsed) || parsed < 0) return
+    setUpdating(staff.id)
+    const { error } = await supabase.from('staffs').update({ wage: parsed }).eq('id', staff.id)
+    if (error) setMessage('時給更新失敗: ' + error.message)
+    else { setMessage(staff.name + 'の時給を¥' + parsed + 'に更新しました'); setEditingWage(null); fetchStaffs() }
+    setUpdating(null)
   }
 
   const typeColor = (t: string) =>
@@ -1003,37 +1058,61 @@ function StaffManagementTab() {
           <CardContent className="space-y-2">
             {activeStaffs.map(staff => (
               <div key={staff.id} className="flex items-center justify-between p-2.5 rounded-lg border">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-start gap-2 flex-wrap flex-1">
                   <span className="font-medium text-sm">{staff.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${typeColor(staff.employment_type)}`}>
                     {staff.employment_type}
                   </span>
-                  {staff.employment_type === 'アルバイト' && (
-                    <span className="text-xs text-muted-foreground">時給{staff.wage}円</span>
+                  {editingWage === staff.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        value={wageInput}
+                        onChange={(e) => setWageInput(e.target.value)}
+                        className="w-20 h-6 text-xs border rounded px-1"
+                        autoFocus
+                      />
+                      <Button size="sm" className="h-6 text-xs px-2" disabled={updating === staff.id}
+                        onClick={() => handleUpdateWage(staff)}>保存</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs px-1"
+                        onClick={() => setEditingWage(null)}>✕</Button>
+                    </div>
+                  ) : (
+                    <button className="text-xs text-muted-foreground hover:underline hover:text-foreground"
+                      onClick={() => { setEditingWage(staff.id); setWageInput(String(staff.wage)) }}>
+                      時給{staff.wage}円
+                    </button>
                   )}
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
+                <div className="flex gap-1 flex-shrink-0 flex-wrap justify-end">
                   {staff.employment_type === 'アルバイト' && (
                     <>
                       <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                         disabled={updating === staff.id}
-                        onClick={() => handleChangeType(staff, '社員')}>
-                        →社員
-                      </Button>
+                        onClick={() => handleChangeType(staff, '社員')}>→社員</Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                         disabled={updating === staff.id}
-                        onClick={() => handleChangeType(staff, '役員')}>
-                        →役員
-                      </Button>
+                        onClick={() => handleChangeType(staff, '長期')}>→長期</Button>
                     </>
                   )}
                   {staff.employment_type === '社員' && (
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        disabled={updating === staff.id}
+                        onClick={() => handleChangeType(staff, 'アルバイト')}>→バイト</Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        disabled={updating === staff.id}
+                        onClick={() => handleChangeType(staff, '長期')}>→長期</Button>
+                    </>
+                  )}
+                  {staff.employment_type === '長期' && (
                     <Button size="sm" variant="outline" className="h-7 text-xs px-2"
                       disabled={updating === staff.id}
-                      onClick={() => handleChangeType(staff, '役員')}>
-                      →役員
-                    </Button>
+                      onClick={() => handleChangeType(staff, 'アルバイト')}>→バイト</Button>
                   )}
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-red-600 border-red-200 hover:bg-red-50"
+                    disabled={updating === staff.id}
+                    onClick={() => handleDelete(staff)}>削除</Button>
                 </div>
               </div>
             ))}
