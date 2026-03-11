@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Home, CalendarPlus, Wallet, ClipboardCheck } from 'lucide-react'
@@ -8,9 +9,12 @@ import { getStoredStaff } from '@/lib/auth'
 
 export function BottomNav() {
   const pathname = usePathname()
-  const staff = getStoredStaff()
-  const isManager = staff?.employment_type === '社員' || staff?.employment_type === '役員'
+  const [isManager, setIsManager] = useState(false)
 
+  useEffect(() => {
+    const staff = getStoredStaff()
+    setIsManager(staff?.employment_type === '社員' || staff?.employment_type === '役員')
+  }, [])
   const navItems = [
     { href: '/home', label: 'ホーム', icon: Home },
     { href: '/shifts', label: 'シフト提出', icon: CalendarPlus },
