@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
@@ -72,28 +72,45 @@ function ShiftConfirmTab() {
   const [confirming, setConfirming] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [closedDates, setClosedDates] = useState<string[]>([])
+  const autoAdvancedRef = useRef(false)
 
   const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
   const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [reqRes, fixedRes, configRes, staffRes] = await Promise.all([
+    const [reqRes, fixedRes, configRes, staffRes, closedRes] = await Promise.all([
       supabase.from('shift_requests').select('*, staffs(name, employment_type)')
         .gte('date', monthStart).lte('date', monthEnd).order('date', { ascending: true }),
       supabase.from('shifts_fixed').select('*')
         .gte('date', monthStart).lte('date', monthEnd).order('date', { ascending: true }),
       supabase.from('shift_config').select('*'),
       supabase.from('staffs').select('*').eq('is_active', true),
+      supabase.from('closed_dates').select('date').gte('date', monthStart).lte('date', monthEnd),
     ])
     if (reqRes.data) setRequests(reqRes.data as RequestWithStaff[])
     if (fixedRes.data) setFixedShifts(fixedRes.data)
     if (configRes.data) setConfigs(configRes.data)
     if (staffRes.data) setAllStaffs(staffRes.data)
+    if (closedRes.data) setClosedDates(closedRes.data.map((c: {date: string}) => c.date))
     setLoading(false)
   }, [monthStart, monthEnd])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // 当月全确定済なら翁月へ自動遅移
+  useEffect(() => {
+    if (!loading && !autoAdvancedRef.current) {
+      autoAdvancedRef.current = true
+      if (requests.length === 0 && fixedShifts.length > 0) {
+        const now = new Date()
+        if (format(selectedMonth, 'yyyy-MM') === format(now, 'yyyy-MM')) {
+          setSelectedMonth(addMonths(now, 1))
+        }
+      }
+    }
+  }, [loading])
 
   const dateMap = useMemo(() => {
     const map: Record<string, RequestWithStaff[]> = {}
@@ -112,6 +129,15 @@ function ShiftConfirmTab() {
     [selectedMonth.toISOString()]
   )
   const firstDow = getDay(startOfMonth(selectedMonth))
+
+  // 前半/後半確定状態
+  const halfStatus = useMemo(() => {
+    const pF = requests.filter(r => parseInt(r.date.slice(8,10)) <= 15 && r.status !== 'rejected').length
+    const pS = requests.filter(r => parseInt(r.date.slice(8,10)) >= 16 && r.status !== 'rejected').length
+    const fF = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) <= 15).map(f => f.staff_id)).size
+    const fS = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) >= 16).map(f => f.staff_id)).size
+    return { firstOk: pF===0 && fF>0, secondOk: pS===0 && fS>0, fp: pF, sp: pS }
+  }, [requests, fixedShifts])
 
   const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2 }
   const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
@@ -182,6 +208,17 @@ function ShiftConfirmTab() {
     setConfirming(false)
   }
 
+  const setClosedDay = async (dateStr: string) => {
+    const alreadyClosed = closedDates.includes(dateStr)
+    if (alreadyClosed) {
+      await supabase.from('closed_dates').delete().eq('date', dateStr)
+    } else {
+      await supabase.from('closed_dates').insert({ date: dateStr })
+      await supabase.from('shift_requests').delete().eq('date', dateStr)
+    }
+    await fetchAll()
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-center gap-4">
@@ -196,6 +233,14 @@ function ShiftConfirmTab() {
         </button>
       </div>
 
+      <div className="flex gap-2 mb-3">
+        <div className={`flex-1 text-center py-1.5 rounded-lg text-xs font-semibold ${halfStatus.firstOk ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : halfStatus.fp > 0 ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : 'bg-zinc-100 text-zinc-500'}`}>
+          前半{halfStatus.firstOk ? ' ✓ 確定済み' : halfStatus.fp > 0 ? ` ${halfStatus.fp}件待ち` : ' データなし'}
+        </div>
+        <div className={`flex-1 text-center py-1.5 rounded-lg text-xs font-semibold ${halfStatus.secondOk ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : halfStatus.sp > 0 ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : 'bg-zinc-100 text-zinc-500'}`}>
+          後半{halfStatus.secondOk ? ' ✓ 確定済み' : halfStatus.sp > 0 ? ` ${halfStatus.sp}件待ち` : ' データなし'}
+        </div>
+      </div>
       <Card>
         <CardContent className="px-2 pt-4">
           <div className="grid grid-cols-7 mb-1">
@@ -209,21 +254,23 @@ function ShiftConfirmTab() {
               const dateStr = format(date, 'yyyy-MM-dd')
               const reqs = (dateMap[dateStr] || []).filter(r => r.status !== 'rejected')
               const fixed = fixedMap[dateStr] || []
+              const isClosed = closedDates.includes(dateStr)
               const isSel = selectedDate === dateStr
               const dow = getDay(date)
               return (
                 <button key={dateStr} onClick={() => setSelectedDate(isSel ? null : dateStr)}
                   className={`relative flex flex-col items-center justify-center rounded-lg py-1 min-h-[52px] text-sm transition-all cursor-pointer
                     ${isSel ? 'bg-zinc-900 text-white' : ''}
-                    ${!isSel && fixed.length > 0 ? 'bg-emerald-50 ring-1 ring-emerald-300' : ''}
+                    ${!isSel && isClosed ? 'bg-rose-100 ring-1 ring-rose-300' : !isSel && fixed.length > 0 ? 'bg-emerald-50 ring-1 ring-emerald-300' : ''}
                     ${!isSel && reqs.length > 0 && fixed.length === 0 ? 'bg-amber-50 ring-1 ring-amber-200' : ''}
                     ${!isSel && reqs.length === 0 && fixed.length === 0 ? 'hover:bg-accent' : ''}
                     ${dow === 0 && !isSel ? 'text-red-500' : ''}
                     ${dow === 6 && !isSel ? 'text-blue-500' : ''}
                   `}>
                   <span className="font-medium">{format(date, 'd')}</span>
-                  {reqs.length > 0 && !isSel && (() => { const aC = reqs.filter(r => r.staffs.employment_type === 'アルバイト').length; const eC = reqs.filter(r => r.staffs.employment_type !== 'アルバイト').length; return <span className="text-[8px] leading-tight text-amber-600 flex flex-col">{aC > 0 && <span>アルバイト{aC}名希望</span>}{eC > 0 && <span>社员{eC}名希望</span>}</span> })()}
-                  {fixed.length > 0 && !isSel && <span className="text-[8px] leading-tight text-emerald-600">{fixed.length}名確定</span>}
+                      {isClosed && !isSel && <span className="text-[8px] text-rose-500 font-bold leading-none">休</span>}
+                  {reqs.length > 0 && !isSel && (() => { const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size; const eC = new Set(reqs.filter(r => r.staffs.employment_type !== 'アルバイト').map(r => r.staff_id)).size; return <span className="text-[8px] leading-tight text-amber-600 flex flex-col">{aC > 0 && <span>アルバイト{aC}名希望</span>}{eC > 0 && <span>社员{eC}名希望</span>}</span> })()}
+                  {fixed.length > 0 && !isSel && <span className="text-[8px] leading-tight text-emerald-600">{new Set(fixed.map(f => f.staff_id)).size}名確定</span>}
                 </button>
               )
             })}
@@ -241,6 +288,18 @@ function ShiftConfirmTab() {
             <CardTitle className="text-sm flex items-center justify-between">
               <span>{format(new Date(selectedDate + 'T00:00:00'), 'M月d日（E）', { locale: ja })}</span>
               <span className="text-xs font-normal text-muted-foreground">希望 {selectedRequests.length}名 / 確定 {selectedFixed.length}名</span>
+              <button
+                onClick={() => setClosedDay(selectedDate!)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-all ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
+              >
+                {closedDates.includes(selectedDate!) ? '定休日解除' : '定休日に設定'}
+              </button>
+              <button
+                onClick={() => setClosedDay(selectedDate!)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-all ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
+              >
+                {closedDates.includes(selectedDate!) ? '定休日解除' : '定休日に設定'}
+              </button>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
