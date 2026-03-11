@@ -15,8 +15,8 @@ export default function AuthenticatedLayout({
   const router = useRouter()
   const [staff, setStaff] = useState<Staff | null>(null)
   const [checking, setChecking] = useState(true)
-  const shopName = staff.shop_id === 2 ? '下北沢' : '三軍茶屋'
-  const themeColor = staff.shop_id === 2 ? '#0d9488' : '#c2410c'
+  const shopName = staff?.shop_id === 2 ? '下北沢' : '三軍茶屋'
+  const themeColor = staff?.shop_id === 2 ? '#0d9488' : '#c2410c'
 
   useEffect(() => {
     const stored = getStoredStaff()
