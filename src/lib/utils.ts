@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * 時刻文字列 "HH:MM:SS" を "HH:MM" に変換
- */
+ *
 export function formatTime(time: string | null): string {
     if (!time) return '—'
   return time.slice(0, 5)
@@ -34,7 +34,7 @@ export function calcHours(start: string, end: string | null): number {
 export function calcWage(start: string, end: string | null, hourlyWage: number): number {
         const effectiveEnd = end ?? '24:00'
   const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = effectiveEnd.split(':').map(Number
+  const [eh, em] = effectiveEnd.split(':').map(Number)
   const startMin = sh * 60 + sm
   const endMin = eh * 60 + em
   if (endMin <= startMin) return 0
