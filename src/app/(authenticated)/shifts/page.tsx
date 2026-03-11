@@ -571,6 +571,7 @@ function HistoryView() {
   const [historyMonth, setHistoryMonth] = useState(() => new Date())
   const [historyShifts, setHistoryShifts] = useState<ShiftFixed[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [rejectedRequests, setRejectedRequests] = useState<ShiftRequest[]>([])
 
   const fetchHistory = useCallback(async () => {
     if (!staff) return
@@ -585,6 +586,14 @@ function HistoryView() {
       .lte('date', me)
       .order('date', { ascending: true })
     if (data) setHistoryShifts(data)
+    const { data: rejData } = await supabase
+      .from('shift_requests')
+      .select('*')
+      .eq('staff_id', staff.id)
+      .eq('status', 'rejected')
+      .gte('date', ms)
+      .lte('date', me)
+    if (rejData) setRejectedRequests(rejData)
     setHistoryLoading(false)
   }, [staff?.id, historyMonth.toISOString()])
 
@@ -596,6 +605,7 @@ function HistoryView() {
   )
   const historyFirstDow = getDay(startOfMonth(historyMonth))
   const getHistoryForDate = (date: Date) => historyShifts.filter((s) => s.date === format(date, 'yyyy-MM-dd'))
+  const getRejectedForDate = (date: Date) => rejectedRequests.find((r) => r.date === format(date, 'yyyy-MM-dd'))
 
   return (
     <>
@@ -631,11 +641,12 @@ function HistoryView() {
               const hasShift = shifts.length > 0
               const dayOfWeek = getDay(date)
               const isToday = isSameDay(date, today)
+              const rejectedReq = getRejectedForDate(date)
               return (
                 <div key={date.toISOString()}
                   className={`
                     flex flex-col items-center justify-center rounded-lg py-1.5 min-h-[52px] text-sm
-                    ${hasShift ? 'bg-blue-50 ring-1 ring-blue-200' : ''}
+                    ${hasShift ? 'bg-blue-50 ring-1 ring-blue-200' : rejectedReq ? 'bg-red-50 ring-1 ring-red-200' : ''}
                     ${isToday ? 'ring-2 ring-zinc-900' : ''}
                     ${dayOfWeek === 0 ? 'text-red-500' : ''}
                     ${dayOfWeek === 6 ? 'text-blue-500' : ''}
@@ -649,6 +660,11 @@ function HistoryView() {
                       {formatTime(s.start_time)}–{formatTime(s.end_time)}
                     </span>
                   ))}
+                  {!hasShift && rejectedReq && (
+                    <span className="text-[7px] leading-tight text-red-500">
+                      ✕{formatTime(rejectedReq.start_time)}–{formatTime(rejectedReq.end_time ?? '24:00:00')}
+                    </span>
+                  )}
                 </div>
               )
             })}
