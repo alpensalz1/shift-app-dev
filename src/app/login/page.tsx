@@ -62,7 +62,7 @@ export default function LoginPage() {
       .eq('is_active', true)
       .order('id', { ascending: true })
       .then(({ data }) => {
-        if (data) setStaffNames(data.map((s) => s.name))
+        if (data) setStaffNames(data.map((s) => s.name).filter((n) => n !== 'いっさ'))
         setNamesLoading(false)
       })
   }, [])
