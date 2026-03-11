@@ -7,7 +7,7 @@ import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { calcWage, calcHours, formatDate } from '@/lib/utils'
+import { calcWage, calcHours } from '@/lib/utils'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
   ChevronLeft, ChevronRight, Loader2, Plus,
@@ -31,6 +31,10 @@ interface ClosedDate {
   shop_id?: number | null
   note?: string
   created_at: string
+}
+
+function fmtDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
 function getWageForDate(wageHistories: WageHistory[], staffId: number, date: string): number | null {
@@ -210,7 +214,7 @@ function StaffManagementTab() {
 
     if (wageNum > 0 && inserted?.[0]) {
       await supabase.from('wage_history').insert({
-        staff_id: inserted[0].id, wage: wageNum, effective_from: formatDate(new Date()),
+        staff_id: inserted[0].id, wage: wageNum, effective_from: fmtDate(new Date()),
       })
     }
     setNewName(''); setNewWage('')
@@ -231,7 +235,7 @@ function StaffManagementTab() {
     const prev = new Date(editingWage.effectiveFrom)
     prev.setDate(prev.getDate() - 1)
     const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
-    if (latest) await supabase.from('wage_history').update({ effective_to: formatDate(prev) }).eq('id', latest.id)
+    if (latest) await supabase.from('wage_history').update({ effective_to: fmtDate(prev) }).eq('id', latest.id)
 
     await supabase.from('wage_history').insert({ staff_id: editingWage.staffId, wage: nw, effective_from: editingWage.effectiveFrom })
     await supabase.from('staffs').update({ wage: nw }).eq('id', editingWage.staffId)
@@ -281,7 +285,7 @@ function StaffManagementTab() {
                     {s.employment_type === 'アルバイト' && (
                       <>
                         <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => handleToggleType(s, '社員')}>→社員</Button>
-                        <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setEditingWage({ staffId: s.id, wage: String(s.wage), effectiveFrom: formatDate(new Date()) })}>時給変更</Button>
+                        <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setEditingWage({ staffId: s.id, wage: String(s.wage), effectiveFrom: fmtDate(new Date()) })}>時給変更</Button>
                       </>
                     )}
                     <Button variant="outline" size="sm" className="text-xs h-7 px-2 text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleSoftDelete(s)}>削除</Button>
@@ -351,7 +355,7 @@ function FulfillmentTab({ month }: { month: string }) {
 
   const [y, m] = month.split('-').map(Number)
   const days = new Date(y, m, 0).getDate()
-  const dates = Array.from({ length: days }, (_, i) => formatDate(new Date(y, m - 1, i + 1)))
+  const dates = Array.from({ length: days }, (_, i) => fmtDate(new Date(y, m - 1, i + 1)))
 
   const shopData = shops.map(shop => {
     const sc = configs.filter(c => c.shop_id === shop.id)
@@ -406,7 +410,7 @@ function FulfillmentTab({ month }: { month: string }) {
 function ClosedDatesTab() {
   const [closedDates, setClosedDates] = useState<ClosedDate[]>([])
   const [shops, setShops] = useState<Shop[]>([])
-  const [newDate, setNewDate] = useState(formatDate(new Date()))
+  const [newDate, setNewDate] = useState(fmtDate(new Date()))
   const [newShopId, setNewShopId] = useState('')
   const [newNote, setNewNote] = useState('')
   const [loading, setLoading] = useState(true)
@@ -426,7 +430,7 @@ function ClosedDatesTab() {
   const handleAdd = async () => {
     if (!newDate) return
     await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
-    setNewDate(formatDate(new Date())); setNewNote(''); setNewShopId('')
+    setNewDate(fmtDate(new Date())); setNewNote(''); setNewShopId('')
     fetch_()
   }
 
@@ -437,7 +441,7 @@ function ClosedDatesTab() {
 
   if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
 
-  const today = formatDate(new Date())
+  const today = fmtDate(new Date())
   const upcoming = closedDates.filter(cd => cd.date >= today)
   const past = closedDates.filter(cd => cd.date < today)
 
