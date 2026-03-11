@@ -869,7 +869,7 @@ function AutoGenerateTab() {
 // ==============================================
 // タブ人件費：アルバイト人件費
 // ==============================================
-function LaborCostTab() {
+export function LaborCostTab() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [loading, setLoading] = useState(false)
   const [staffs, setStaffs] = useState<Staff[]>([])
@@ -972,7 +972,7 @@ function LaborCostTab() {
 // ==============================================
 // タブスタッフ管理
 // ==============================================
-function StaffManagementTab() {
+export function StaffManagementTab() {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<number | null>(null)
@@ -1054,7 +1054,7 @@ function StaffManagementTab() {
     t === '役員' ? 'bg-amber-100 text-amber-800' :
     'bg-zinc-100 text-zinc-600'
 
-  const activeStaffs = staffs.filter(s => s.is_active)
+  const activeStaffs = staffs.filter(s => s.is_active && s.employment_type !== '役員')
 
   return (
     <div className="space-y-4">
@@ -1234,27 +1234,11 @@ export default function ManagePage() {
           <Wand2 className="h-4 w-4" />
           自動生成
         </button>
-        <button onClick={() => setActiveTab('salary')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'salary' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <Banknote className="h-4 w-4" />
-          人件費
-        </button>
-        <button onClick={() => setActiveTab('staff')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'staff' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <UserPlus className="h-4 w-4" />
-          スタッフ管理
-        </button>
       </div>
 
       {activeTab === 'confirm' && <ShiftConfirmTab />}
       {activeTab === 'rules' && <RulesTab />}
       {activeTab === 'auto' && <AutoGenerateTab />}
-      {activeTab === 'salary' && <LaborCostTab />}
-      {activeTab === 'staff' && <StaffManagementTab />}
     </div>
   )
 }
