@@ -649,25 +649,36 @@ function HistoryView() {
       ) : historyShifts.length > 0 ? (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">出勤一覧（{historyShifts.length}日）</CardTitle>
+            <CardTitle className="text-sm">出勤一覧（{new Set(historyShifts.map(s => s.date)).size}日）</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {historyShifts.map((s) => (
-                <div key={s.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
+              {Object.entries(
+                historyShifts.reduce((acc, s) => {
+                  if (!acc[s.date]) acc[s.date] = []
+                  acc[s.date].push(s)
+                  return acc
+                }, {} as Record<string, typeof historyShifts>)
+              )
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([date, dayShifts]) => (
+                  <div key={date} className="py-2 border-b last:border-0">
                     <span className="text-sm font-medium">
-                      {format(new Date(s.date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
+                      {format(new Date(date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
                     </span>
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                    </span>
-                    <span className={`text-xs ml-1.5 px-1.5 py-0.5 rounded-full ${
-                      s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                    }`}>{s.type}</span>
+                    <div className="flex flex-wrap gap-2 mt-0.5">
+                      {dayShifts.map((s) => (
+                        <span key={s.id} className="text-xs text-muted-foreground">
+                          <span className={`px-1.5 py-0.5 rounded-full ${
+                            s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                          }`}>{s.type}</span>
+                          {' '}{formatTime(s.start_time)}–{formatTime(s.end_time)}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              }
             </div>
           </CardContent>
         </Card>
