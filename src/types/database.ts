@@ -37,6 +37,7 @@ export interface ShiftRequest {
   submitted_at: string
   created_at: string
   updated_at: string
+  status?: 'pending' | 'rejected'
 }
 
 export interface ShiftFixed {
