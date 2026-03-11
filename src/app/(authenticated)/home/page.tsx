@@ -14,6 +14,11 @@ const SHOPS = [
   { id: 2, name: '下北沢' },
 ]
 
+const SHOP_STYLES: Record<number, { card: string; icon: string; badge: string }> = {
+  1: { card: 'border-l-4 border-l-amber-400 bg-amber-50/30', icon: 'text-amber-600', badge: 'bg-amber-500' },
+  2: { card: 'border-l-4 border-l-blue-400 bg-blue-50/30', icon: 'text-blue-600', badge: 'bg-blue-500' },
+}
+
 export default function HomePage() {
   const [shifts, setShifts] = useState<ShiftFixedWithStaff[]>([])
   const [loading, setLoading] = useState(true)
@@ -92,10 +97,10 @@ export default function HomePage() {
             const hasShifts = shikomShifts.length > 0 || eigyoShifts.length > 0
 
             return (
-              <Card key={shop.id}>
+              <Card key={shop.id} className={SHOP_STYLES[shop.id]?.card}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
+                    <MapPin className={`h-4 w-4 ${SHOP_STYLES[shop.id]?.icon ?? ''}`} />
                     {shop.name}店
                   </CardTitle>
                 </CardHeader>
@@ -120,7 +125,7 @@ export default function HomePage() {
                               <div key={s.id} className="flex items-center justify-between text-sm pl-2">
                                 <span className="font-medium">{s.staffs.name}</span>
                                 <span className="text-muted-foreground tabular-nums">
-                                  {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                  {formatTime(s.start_time)}–{s.end_time && s.end_time > s.start_time ? formatTime(s.end_time) : '24:00'}
                                 </span>
                               </div>
                             ))}
@@ -143,7 +148,7 @@ export default function HomePage() {
                               <div key={s.id} className="flex items-center justify-between text-sm pl-2">
                                 <span className="font-medium">{s.staffs.name}</span>
                                 <span className="text-muted-foreground tabular-nums">
-                                  {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                  {formatTime(s.start_time)}–{s.end_time && s.end_time > s.start_time ? formatTime(s.end_time) : '24:00'}
                                 </span>
                               </div>
                             ))}
