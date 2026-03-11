@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftFixed } from '@/types/database'
+import { ShiftFixed , Staff} from '@/types/database'
 import { calcWage, calcHours, formatTime } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
@@ -11,7 +11,11 @@ import { ja } from 'date-fns/locale'
 import { Wallet, Clock, CalendarDays } from 'lucide-react'
 
 export default function SalaryPage() {
-  const staff = getStoredStaff()
+  const [staff, setStaff] = useState<Staff | null>(null)
+
+  useEffect(() => {
+    setStaff(getStoredStaff())
+  }, [])
   const [shifts, setShifts] = useState<ShiftFixed[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => format(new Date(), 'yyyy-MM'))
@@ -74,7 +78,7 @@ export default function SalaryPage() {
           給与概算
         </h2>
         <p className="text-sm text-muted-foreground">
-          時給 ¥{staff?.wage.toLocaleString()} / 22時以降 1.25倍
+          時給 ¥{staff?.wage?.toLocaleString()} / 22時以降 1.25倍
         </p>
       </div>
 
