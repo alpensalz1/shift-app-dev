@@ -57,7 +57,7 @@ export default function SalaryPage() {
     return {
       totalWage,
       totalHours: Math.round(totalHours * 10) / 10,
-      shiftCount: shifts.length,
+      shiftCount: new Set(shifts.map(s => s.date)).size,
     }
   }, [shifts, staff?.wage])
 
@@ -154,14 +154,23 @@ export default function SalaryPage() {
                   : 0
                 const totalHours = Math.round(dayShifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) * 10) / 10
                 return (
-                  <div key={date} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div>
-                      <span className="text-sm font-medium">
-                        {format(new Date(date + 'T00:00:00'), 'M/d (E)', { locale: ja })}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-2">{totalHours}h</span>
+                  <div key={date} className="py-2 border-b last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium">
+                          {format(new Date(date + 'T00:00:00'), 'M/d (E)', { locale: ja })}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2">{totalHours}h</span>
+                      </div>
+                      <p className="text-sm font-medium tabular-nums">¥{totalWage.toLocaleString()}</p>
                     </div>
-                    <p className="text-sm font-medium tabular-nums">¥{totalWage.toLocaleString()}</p>
+                    <div className="flex flex-wrap gap-x-3 mt-0.5">
+                      {dayShifts.map((s, idx) => (
+                        <span key={idx} className="text-xs text-muted-foreground">
+                          {s.type} {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )
               })
