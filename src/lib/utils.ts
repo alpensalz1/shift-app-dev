@@ -39,14 +39,10 @@ export function calcWage(start: string, end: string | null, hourlyWage: number):
   const endMin = eh * 60 + em
   if (endMin <= startMin) return 0
 
-  let total = 0
   const NIGHT_START = 22 * 60  // 22:00
-
-  for (let m = startMin; m < endMin; m++) {
-    const isNight = m >= NIGHT_START
-    const rate = isNight ? 1.25 : 1.0
-    total += (hourlyWage / 60) * rate
-  }
+  const dayMins = Math.max(0, Math.min(endMin, NIGHT_START) - startMin)
+  const nightMins = Math.max(0, endMin - Math.max(startMin, NIGHT_START))
+  const total = (hourlyWage / 60) * (dayMins + nightMins * 1.25)
 
   return Math.round(total)
 }
