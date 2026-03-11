@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftRequest, ShiftFixed, OffRequest } from '@/types/database'
+import { ShiftRequest, ShiftFixed, OffRequest, Staff } from '@/types/database'
 import { getSubmissionPeriod, generateTimeSlots, formatTime, isValid15MinTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -684,9 +684,18 @@ function HistoryView() {
 // メインページ
 // =============================================
 export default function ShiftsPage() {
-  const staff = getStoredStaff()
+  const [staff, setStaff] = useState<Staff | null>(null)
+  const [staffLoaded, setStaffLoaded] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('submit')
+
+  useEffect(() => {
+    setStaff(getStoredStaff())
+    setStaffLoaded(true)
+  }, [])
+
   const isEmployee = staff?.employment_type === '社員' || staff?.employment_type === '役員'
+
+  if (!staffLoaded) return null
 
   return (
     <div className="space-y-4">
