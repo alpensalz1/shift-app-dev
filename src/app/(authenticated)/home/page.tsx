@@ -17,10 +17,17 @@ const SHOPS = [
 export default function HomePage() {
   const [shifts, setShifts] = useState<ShiftFixedWithStaff[]>([])
   const [loading, setLoading] = useState(true)
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const todayLabel = format(new Date(), 'M月d日（E）', { locale: ja })
+  const [today, setToday] = useState('')
+  const [todayLabel, setTodayLabel] = useState('')
+
+  useEffect(() => {
+    const now = new Date()
+    setToday(format(now, 'yyyy-MM-dd'))
+    setTodayLabel(format(now, 'M月d日（E）', { locale: ja }))
+  }, [])
 
   const fetchTodayShifts = async () => {
+    if (!today) return
     const { data } = await supabase
       .from('shifts_fixed')
       .select('*, staffs(name), shops(name)')
