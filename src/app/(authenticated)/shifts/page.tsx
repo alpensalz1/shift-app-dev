@@ -19,7 +19,7 @@ import {
   subMonths,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, Trash2, History } from 'lucide-react'
+import { CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, Trash2, History, XCircle } from 'lucide-react'
 
 const TIME_SLOTS = generateTimeSlots(9, 24)
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
@@ -532,7 +532,7 @@ function PartTimeSubmitView() {
           <CardContent>
             <div className="space-y-2">
               {existing.map((req) => (
-                <div key={req.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div key={req.id} className={`flex items-center justify-between py-2 border-b last:border-0 ${req.status === 'rejected' ? 'opacity-70 bg-red-50 px-2 rounded' : ''}`}>
                   <div>
                     <span className="text-sm font-medium">
                       {format(new Date(req.date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
@@ -541,6 +541,11 @@ function PartTimeSubmitView() {
                       {formatTime(req.start_time)}–{formatTime(req.end_time)}
                     </span>
                     <span className="text-xs ml-1.5 px-1.5 py-0.5 rounded-full bg-secondary">{req.type}</span>
+                            {req.status === 'rejected' && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium flex items-center gap-0.5">
+                                <XCircle className="h-3 w-3" /> 却下
+                              </span>
+                            )}
                   </div>
                   <button onClick={() => handleDelete(req.id)}
                     className="p-1.5 text-muted-foreground hover:text-destructive transition-colors">
