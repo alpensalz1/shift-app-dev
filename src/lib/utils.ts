@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * 時刻文字列 "HH:MM:SS" を "HH:MM" に変換
- *
+ */
 export function formatTime(time: string | null): string {
     if (!time) return '—'
   return time.slice(0, 5)
