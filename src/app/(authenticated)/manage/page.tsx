@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
-import { formatTime, getSubmissionPeriod } from '@/lib/utils'
+import { formatTime, getSubmissionPeriod, calcWage } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -844,7 +844,7 @@ function LaborCostTab() {
   const staffCosts = partTimers.map(staff => {
     const shifts = fixedShifts.filter(f => f.staff_id === staff.id)
     const totalHours = shifts.reduce((sum, f) => sum + calcHours(f.start_time, f.end_time), 0)
-    const totalCost = Math.round(totalHours * staff.wage)
+    const totalCost = shifts.reduce((sum, f) => sum + calcWage(f.start_time, f.end_time, staff.wage), 0)
     return { staff, shiftCount: shifts.length, totalHours, totalCost }
   })
   const grandTotal = staffCosts.reduce((sum, s) => sum + s.totalCost, 0)
