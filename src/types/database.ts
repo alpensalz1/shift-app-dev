@@ -11,6 +11,7 @@ export interface Staff {
   employment_type: '社員' | 'アルバイト' | '役員'
   wage: number
   is_active: boolean
+  shop_id: number
   created_at: string
 }
 
