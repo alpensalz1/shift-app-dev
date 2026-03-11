@@ -18,9 +18,9 @@ export function formatTime(time: string | null): string {
  * 24:00が上限（月またがなし）
  */
 export function calcHours(start: string, end: string | null): number {
-    if (!end) return 0
+        const effectiveEnd = end ?? '24:00'
   const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
+  const [eh, em] = effectiveEnd.split(':').map(Number)
   const startMin = sh * 60 + sm
   const endMin = eh * 60 + em
   if (endMin <= startMin) return 0
@@ -32,9 +32,9 @@ export function calcHours(start: string, end: string | null): number {
  * 22:00〜24:00は1.25間（24:00ば上限なので翌日は考慮しない）
  */
 export function calcWage(start: string, end: string | null, hourlyWage: number): number {
-    if (!end) return 0
+        const effectiveEnd = end ?? '24:00'
   const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
+  const [eh, em] = effectiveEnd.split(':').map(Number
   const startMin = sh * 60 + sm
   const endMin = eh * 60 + em
   if (endMin <= startMin) return 0
