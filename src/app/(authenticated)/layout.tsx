@@ -45,8 +45,7 @@ export default function AuthenticatedLayout({
 
   return (
     <div className="min-h-screen pb-20" style={{ '--theme-color': themeColor } as React.CSSProperties}>
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80" style={{ borderBottom: '2px solid ' + themeColor }}>
-        <div style={{ height: '4px', backgroundColor: themeColor }} />
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
           <h1 className="text-base font-semibold">シフト管理</h1>
           <div className="flex items-center gap-3">
