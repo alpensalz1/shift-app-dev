@@ -12,11 +12,13 @@ export function BottomNav() {
   const pathname = usePathname()
   const [isManager, setIsManager] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [showSalary, setShowSalary] = useState(false)
 
   useEffect(() => {
     const staff = getStoredStaff()
     const manager = staff?.employment_type === '社員' || staff?.employment_type === '長期'
     setIsManager(manager)
+    setShowSalary(staff?.employment_type === 'アルバイト')
     if (manager) {
       supabase
         .from('shift_requests')
@@ -29,7 +31,7 @@ export function BottomNav() {
   const navItems = [
     { href: '/home', label: 'ホーム', icon: Home },
     { href: '/shifts', label: 'シフト申請', icon: CalendarPlus },
-    { href: '/salary', label: '給与概算', icon: Wallet },
+    ...(showSalary ? [{ href: '/salary', label: '給与概算', icon: Wallet }] : []),
     ...(isManager
       ? [{ href: '/manage', label: 'シフト管理', icon: ClipboardCheck }]
       : []),
