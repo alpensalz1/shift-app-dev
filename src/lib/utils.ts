@@ -56,21 +56,32 @@ export function calcWage(start: string, end: string | null, hourlyWage: number):
  * 1-1日 → 当月16日〜末日
  * 16-末日 → 翌月1日〜15日
  */
-export function getSubmissionPeriod(today: Date): { start: Date; end: Date } {
+export function getSubmissionPeriod(today: Date): { start: Date; end: Date; deadline: Date } {
   const year = today.getFullYear()
   const month = today.getMonth()
   const day = today.getDate()
 
-  if (day <= 15) {
-    // 当月16日〜末日
-    const start = new Date(year, month, 16)
-    const end = new Date(year, month + 1, 0) // 末日
-    return { start, end }
+  if (day <= 5) {
+    // 当月16日〜末日（締め切り：当月5日）
+    return {
+      start: new Date(year, month, 16),
+      end: new Date(year, month + 1, 0),
+      deadline: new Date(year, month, 5),
+    }
+  } else if (day <= 20) {
+    // 翌月1日〜15日（締め切り：当月20日）
+    return {
+      start: new Date(year, month + 1, 1),
+      end: new Date(year, month + 1, 15),
+      deadline: new Date(year, month, 20),
+    }
   } else {
-    // 翌月1日〜15日
-    const start = new Date(year, month + 1, 1)
-    const end = new Date(year, month + 1, 15)
-    return { start, end }
+    // 翌月16日〜末日（締め切り：翌月5日）
+    return {
+      start: new Date(year, month + 1, 16),
+      end: new Date(year, month + 2, 0),
+      deadline: new Date(year, month + 1, 5),
+    }
   }
 }
 
