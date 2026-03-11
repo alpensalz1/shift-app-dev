@@ -70,6 +70,18 @@ export default function SalaryPage() {
     setSelectedMonth(format(d, 'yyyy-MM'))
   }
 
+  if (staff && staff.employment_type !== 'アルバイト') {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+        <Wallet className="h-12 w-12 text-muted-foreground/30" />
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">給与概算はアルバイトスタッフ専用です</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">社員・長期スタッフの給与は別途ご確認ください</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div>
