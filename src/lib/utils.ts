@@ -17,7 +17,8 @@ export function formatTime(time: string | null): string {
  * 2つの時刻間の勤務時間（時間単位）を計算
  * 24:00が上限（月またがなし）
  */
-export function calcHours(start: string, end: string): number {
+export function calcHours(start: string, end: string | null): number {
+    if (!end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
   const startMin = sh * 60 + sm
@@ -30,7 +31,8 @@ export function calcHours(start: string, end: string): number {
  * 深夜手当を含めた給与計算
  * 22:00〜24:00は1.25間（24:00ば上限なので翌日は考慮しない）
  */
-export function calcWage(start: string, end: string, hourlyWage: number): number {
+export function calcWage(start: string, end: string | null, hourlyWage: number): number {
+    if (!end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
   const startMin = sh * 60 + sm
