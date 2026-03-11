@@ -798,9 +798,10 @@ function LaborCostTab() {
     load()
   }, [monthStart, monthEnd])
 
-  const calcHours = (start: string, end: string) => {
+  const calcHours = (start: string, end: string | null) => {
+    const effectiveEnd = end ?? '24:00:00'
     const [sh, sm] = start.split(':').map(Number)
-    const [eh, em] = end.split(':').map(Number)
+    const [eh, em] = effectiveEnd.split(':').map(Number)
     return (eh * 60 + em - (sh * 60 + sm)) / 60
   }
 
@@ -1053,15 +1054,20 @@ type ManageTab = 'confirm' | 'rules' | 'auto' | 'salary' | 'staff'
 
 export default function ManagePage() {
   const router = useRouter()
-  const currentStaff = getStoredStaff()
+  const [currentStaff, setCurrentStaff] = useState<Staff | null>(null)
+  const [staffLoaded, setStaffLoaded] = useState(false)
   const [activeTab, setActiveTab] = useState<ManageTab>('confirm')
 
   useEffect(() => {
-    if (currentStaff && currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員') {
+    const staff = getStoredStaff()
+    setCurrentStaff(staff)
+    setStaffLoaded(true)
+    if (!staff || (staff.employment_type !== '社員' && staff.employment_type !== '役員')) {
       router.replace('/home')
     }
-  }, [currentStaff, router])
+  }, [router])
 
+  if (!staffLoaded) return null
   if (!currentStaff || (currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員')) return null
 
   return (
