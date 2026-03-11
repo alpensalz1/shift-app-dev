@@ -159,7 +159,7 @@ function EmployeeSubmitView() {
         const type = t === '仕込みのみ' ? '仕込み' : t === '営業のみ' ? '営業' : '仕込み・営業'
         const st = t === '営業のみ' ? '17:00:00' : '14:00:00'
         const et = t === '仕込みのみ' ? '17:00:00' : '24:00:00'
-        return { staff_id: staff!.id, date: key, type, start_time: st, end_time: et }
+        return { staff_id: staff!.id, date: key, type, start_time: st, end_time: et, status: 'pending' as const }
       })
 
     if (shiftRows.length > 0) {
@@ -391,6 +391,7 @@ function PartTimeSubmitView() {
       start_time: startTime.padStart(5, '0') + ':00',
       end_time: endTime.padStart(5, '0') + ':00',
       note,
+      status: 'pending' as const,
     }))
     const { error } = await supabase.from('shift_requests').upsert(rows, { onConflict: 'staff_id,date' })
     if (error) {
@@ -454,14 +455,14 @@ function PartTimeSubmitView() {
                     relative flex flex-col items-center justify-center rounded-lg py-1.5 min-h-[52px] text-sm transition-all
                     ${!inPeriod ? 'text-muted-foreground/40 cursor-not-allowed' : 'cursor-pointer hover:bg-accent'}
                     ${selected ? 'bg-zinc-900 text-white hover:bg-zinc-800' : ''}
-                    ${existingReq && !selected ? 'bg-emerald-50 ring-1 ring-emerald-200' : ''}
+                    ${existingReq && !selected ? (existingReq.status === 'rejected' ? 'bg-red-50 ring-1 ring-red-200' : 'bg-emerald-50 ring-1 ring-emerald-200') : ''}
                     ${dayOfWeek === 0 && inPeriod && !selected ? 'text-red-500' : ''}
                     ${dayOfWeek === 6 && inPeriod && !selected ? 'text-blue-500' : ''}
                   `}
                 >
                   <span className="font-medium">{format(date, 'd')}</span>
                   {existingReq && (
-                    <span className="text-[8px] leading-tight mt-0.5 text-emerald-600">
+                    <span className={`text-[8px] leading-tight mt-0.5 ${existingReq.status === 'rejected' ? 'text-red-500' : 'text-emerald-600'}`}>
                       {formatTime(existingReq.start_time)}
                     </span>
                   )}
