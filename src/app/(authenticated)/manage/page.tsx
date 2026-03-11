@@ -252,7 +252,7 @@ function ShiftConfirmTab() {
                           <span className={`text-xs px-1.5 py-0.5 rounded-full ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{f.type}</span>
                           <span className="text-xs text-muted-foreground">{f.shop_id === 1 ? '三茶' : '下北'}</span>
                         </div>
-                        <button onClick={() => handleRemoveFixed(f.id)} disabled={confirming}
+                        <button onClick={() => { if (window.confirm('このシフトを取り消しますか？')) handleRemoveFixed(f.id) }} disabled={confirming}
                           className="p-1 text-muted-foreground hover:text-destructive transition-colors">
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -802,7 +802,7 @@ function LaborCostTab() {
     const effectiveEnd = end ?? '24:00:00'
     const [sh, sm] = start.split(':').map(Number)
     const [eh, em] = effectiveEnd.split(':').map(Number)
-    return (eh * 60 + em - (sh * 60 + sm)) / 60
+    return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60)
   }
 
   const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
@@ -1100,7 +1100,7 @@ export default function ManagePage() {
             activeTab === 'salary' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
           }`}>
           <Banknote className="h-4 w-4" />
-          アルバイト人件費
+          人件費
         </button>
         <button onClick={() => setActiveTab('staff')}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
