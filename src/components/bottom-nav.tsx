@@ -6,22 +6,32 @@ import { usePathname } from 'next/navigation'
 import { Home, CalendarPlus, Wallet, ClipboardCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getStoredStaff } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
 
 export function BottomNav() {
   const pathname = usePathname()
   const [isManager, setIsManager] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
     const staff = getStoredStaff()
-    setIsManager(staff?.employment_type === '社員' || staff?.employment_type === '役員')
-  }, [])
+    const manager = staff?.employment_type === '社員' || staff?.employment_type === '長期'
+    setIsManager(manager)
+    if (manager) {
+      supabase
+        .from('shift_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .then(({ count }) => { if (count != null) setPendingCount(count) })
+    }
+  }, [pathname])
+
   const navItems = [
     { href: '/home', label: 'ホーム', icon: Home },
-    { href: '/shifts', label: 'シフト提出', icon: CalendarPlus },
+    { href: '/shifts', label: 'シフト申請', icon: CalendarPlus },
     { href: '/salary', label: '給与概算', icon: Wallet },
-    // 社員のみ: シフト確定画面
     ...(isManager
-      ? [{ href: '/manage', label: 'シフト確定', icon: ClipboardCheck }]
+      ? [{ href: '/manage', label: 'シフト管理', icon: ClipboardCheck }]
       : []),
   ]
 
@@ -30,6 +40,7 @@ export function BottomNav() {
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href
+          const showBadge = item.href === '/manage' && pendingCount > 0
           return (
             <Link
               key={item.href}
@@ -41,7 +52,14 @@ export function BottomNav() {
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <item.icon className={cn('h-5 w-5', isActive && 'stroke-[2.5]')} />
+              <div className="relative">
+                <item.icon className={cn('h-5 w-5', isActive && 'stroke-[2.5]')} />
+                {showBadge && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           )
