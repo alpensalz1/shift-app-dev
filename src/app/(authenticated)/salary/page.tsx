@@ -167,7 +167,7 @@ export default function SalaryPage() {
                     <div className="flex flex-wrap gap-x-3 mt-0.5">
                       {dayShifts.map((s, idx) => (
                         <span key={idx} className="text-xs text-muted-foreground">
-                          {s.type} {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                          {s.type} {formatTime(s.start_time)}–{s.end_time ? formatTime(s.end_time) : '24:00'}
                         </span>
                       ))}
                     </div>
