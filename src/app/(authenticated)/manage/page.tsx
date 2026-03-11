@@ -115,6 +115,7 @@ function ShiftConfirmTab() {
 
   const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2 }
   const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
+    .filter((r) => r.status !== 'rejected')
     .slice()
     .sort((a, b) => (typeOrder[a.staffs.employment_type] ?? 1) - (typeOrder[b.staffs.employment_type] ?? 1))
   const selectedFixed = selectedDate ? (fixedMap[selectedDate] || []) : []
@@ -206,7 +207,7 @@ function ShiftConfirmTab() {
             {Array.from({ length: firstDow }).map((_, i) => <div key={`e-${i}`} />)}
             {calDays.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd')
-              const reqs = dateMap[dateStr] || []
+              const reqs = (dateMap[dateStr] || []).filter(r => r.status !== 'rejected')
               const fixed = fixedMap[dateStr] || []
               const isSel = selectedDate === dateStr
               const dow = getDay(date)
