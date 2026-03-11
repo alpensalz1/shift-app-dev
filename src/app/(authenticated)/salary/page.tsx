@@ -135,31 +135,33 @@ export default function SalaryPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {shifts.map((s) => {
-                const wage = staff ? calcWage(s.start_time, s.end_time, staff.wage) : 0
-                const hours = calcHours(s.start_time, s.end_time)
+                          {Object.entries(
+              shifts.reduce((acc, s) => {
+                const key = s.date
+                if (!acc[key]) acc[key] = []
+                acc[key].push(s)
+                return acc
+              }, {} as Record<string, typeof shifts>)
+            )
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([date, dayShifts]) => {
+                const totalWage = staff
+                  ? Math.round(dayShifts.reduce((sum, s) => sum + calcWage(s.start_time, s.end_time, staff.wage), 0))
+                  : 0
+                const totalHours = Math.round(dayShifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) * 10) / 10
                 return (
-                  <div key={s.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div key={date} className="flex items-center justify-between py-2 border-b last:border-0">
                     <div>
                       <span className="text-sm font-medium">
-                        {format(new Date(s.date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
+                        {format(new Date(date + 'T00:00:00'), 'M/d (E)', { locale: ja })}
                       </span>
-                      <span className="text-xs text-muted-foreground ml-2">
-                        {formatTime(s.start_time)}–{formatTime(s.end_time)}
-                      </span>
-                      <span className={`text-xs ml-1.5 px-1.5 py-0.5 rounded-full ${
-                        s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {s.type}
-                      </span>
+                      <span className="text-xs text-muted-foreground ml-2">{totalHours}h</span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium tabular-nums">¥{wage.toLocaleString()}</p>
-                      <p className="text-[10px] text-muted-foreground">{hours}h</p>
-                    </div>
+                    <p className="text-sm font-medium tabular-nums">¥{totalWage.toLocaleString()}</p>
                   </div>
                 )
-              })}
+              })
+                          }
             </div>
           </CardContent>
         </Card>
