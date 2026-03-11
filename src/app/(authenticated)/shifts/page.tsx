@@ -201,6 +201,9 @@ function EmployeeSubmitView() {
           対象期間: <span className="font-medium text-foreground">{periodLabel}</span>
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
+          締め切り: <span className="font-medium text-foreground">{format(period.deadline, 'M/d')}</span>
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
           タップで 出勤 → 休み → 仕込みのみ → 営業のみ と切り替わります
         </p>
       </div>
@@ -413,6 +416,9 @@ function PartTimeSubmitView() {
       <div>
         <p className="text-sm text-muted-foreground">
           期間: <span className="font-medium text-foreground">{periodLabel}</span>
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          締め切り: <span className="font-medium text-foreground">{format(period.deadline, 'M/d')}</span>
         </p>
       </div>
 
