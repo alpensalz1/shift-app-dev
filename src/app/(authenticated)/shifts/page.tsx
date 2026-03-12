@@ -72,7 +72,8 @@ function generateTimeOptions(
       h++
     }
   }
-  return options}
+  return options
+}
 
 // 開始時刻: 14:00 〜 23:45
 const START_TIME_OPTIONS = generateTimeOptions(14, 0, 23, 45)
@@ -146,7 +147,8 @@ function getPeriod(offset: number): Period {
 
 export default function ShiftsPage() {
   const [staff, setStaff] = useState<Staff | null>(null)
-  const [loading, setLoading] = useState(true)  const [periodOffset, setPeriodOffset] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [periodOffset, setPeriodOffset] = useState(0)
 
   useEffect(() => {
     const stored = getStoredStaff()
@@ -220,7 +222,8 @@ export default function ShiftsPage() {
 
       {/* フォーム本体 */}
       {isPartTimer ? (
-        <PartTimerForm          key={period.label}
+        <PartTimerForm
+          key={period.label}
           staff={staff}
           periodStart={period.start}
           periodEnd={period.end}
@@ -294,7 +297,8 @@ function PartTimerForm({
         setTimes(tm)
       }
       setLoadingExisting(false)
-    }    load()
+    }
+    load()
   }, [staff.id, periodStart, periodEnd])
 
   function toggleDay(dk: string) {
@@ -368,6 +372,7 @@ function PartTimerForm({
   }
 
   if (done) return <SuccessCard message="シフト希望を提出しました！" />
+
   if (loadingExisting) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -442,7 +447,8 @@ function PartTimerForm({
 
       {/* 時刻入力エリア */}
       {sortedSelected.length > 0 && (
-        <div className="space-y-2">          <p className="text-xs font-semibold text-muted-foreground px-1">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground px-1">
             ▼ 各日の時間を入力してください
           </p>
           {sortedSelected.map((dk) => {
@@ -516,7 +522,8 @@ function PartTimerForm({
       >
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
-        ) : selected.size === 0 ? (          '出勤希望日を選択してください'
+        ) : selected.size === 0 ? (
+          '出勤希望日を選択してください'
         ) : hasErrors ? (
           '⚠️ 時刻入力を確認してください'
         ) : (
@@ -591,6 +598,7 @@ function FullTimeForm({
       return updated
     })
   }
+
   async function handleSubmit() {
     setSubmitting(true)
     try {
@@ -664,7 +672,8 @@ function FullTimeForm({
           <span className="flex items-center gap-1">
             <span className="w-5 h-5 rounded-lg bg-indigo-500 inline-flex items-center justify-center text-white text-[10px]">
               営
-            </span>            営業のみ
+            </span>
+            営業のみ
           </span>
         </div>
       </div>
@@ -738,7 +747,8 @@ function FullTimeForm({
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <>            <Send className="h-4 w-4 mr-2" />
+          <>
+            <Send className="h-4 w-4 mr-2" />
             シフト希望を提出する
           </>
         )}
@@ -812,7 +822,8 @@ function DeadlineBanner({ period }: { period: Period }) {
       <div>
         <p className="text-xs text-muted-foreground">
           締切:{' '}
-          <span className="font-medium">            {format(period.deadline, 'M/d（E）', { locale: ja })}
+          <span className="font-medium">
+            {format(period.deadline, 'M/d（E）', { locale: ja })}
           </span>
         </p>
         <p
