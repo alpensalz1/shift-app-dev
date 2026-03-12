@@ -69,6 +69,7 @@ function ShopCard({ shopName, shifts, style, currentStaffId }: {
         {byStaff.map((staffShifts) => {
           const staff = staffShifts[0].staff
           const isShanin = staff?.employment_type === '社員'
+          const isYakuin = staff?.employment_type === '役員'
           const isMe = currentStaffId != null && staffShifts[0].staff_id === currentStaffId
           return (
             <div
@@ -92,6 +93,9 @@ function ShopCard({ shopName, shifts, style, currentStaffId }: {
                 )}
                 {isShanin && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 shrink-0">社員</span>
+                )}
+                {isYakuin && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">役員</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 ml-2">
