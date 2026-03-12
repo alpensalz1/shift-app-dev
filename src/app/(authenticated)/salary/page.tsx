@@ -3,12 +3,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftFixed , Staff} from '@/types/database'
+import { ShiftFixed, Staff } from '@/types/database'
 import { calcWage, calcHours, formatTime } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfMonth, endOfMonth, getDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { Wallet, Clock, CalendarDays } from 'lucide-react'
+import { Wallet, Clock, CalendarDays, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
 
 export default function SalaryPage() {
   const [staff, setStaff] = useState<Staff | null>(null)
@@ -44,7 +44,7 @@ export default function SalaryPage() {
   }, [staff?.id, selectedMonth])
 
   const stats = useMemo(() => {
-    if (!staff) return { totalWage: 0, totalHours: 0, shiftCount: 0, nightHours: 0 }
+    if (!staff) return { totalWage: 0, totalHours: 0, shiftCount: 0 }
 
     let totalWage = 0
     let totalHours = 0
@@ -63,139 +63,158 @@ export default function SalaryPage() {
 
   const monthLabel = format(new Date(selectedMonth + '-01'), 'yyyy年M月', { locale: ja })
 
-  // 前月/次月
   const handleMonthChange = (delta: number) => {
     const d = new Date(selectedMonth + '-01')
     d.setMonth(d.getMonth() + delta)
     setSelectedMonth(format(d, 'yyyy-MM'))
   }
 
-  if (staff && staff.employment_type !== 'アルバイト') {
+  if (staff?.employment_type !== 'アルバイト') {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-        <Wallet className="h-12 w-12 text-muted-foreground/30" />
+      <div className="flex flex-col items-center justify-center py-20 text-center gap-4 animate-fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
+          <Wallet className="h-7 w-7 text-muted-foreground/30" />
+        </div>
         <div>
-          <p className="text-sm font-medium text-muted-foreground">給与概算はアルバイトスタッフ専用です</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">社員・長期スタッフの給与は別途ご確認ください</p>
+          <p className="text-sm font-semibold text-muted-foreground">アルバイト専用の機能です</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">社員の給与は別途ご確認ください</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="px-4 pt-3 pb-24 space-y-4">
+      {/* Header */}
       <div>
-        <h2 className="text-lg font-bold flex items-center gap-2">
+        <h2 className="text-lg font-bold flex items-center gap-2 tracking-tight">
           <Wallet className="h-5 w-5" />
           給与概算
         </h2>
-        <p className="text-sm text-muted-foreground">
-          時給 ¥{staff?.wage?.toLocaleString()} / 22時以降 1.25倍
+        <p className="text-xs text-muted-foreground mt-0.5">
+          時給 <span className="font-bold tabular-nums">¥{staff?.wage?.toLocaleString()}</span>
+          <span className="mx-1.5 text-muted-foreground/30">|</span>
+          22時以降 1.25倍
         </p>
       </div>
 
-      {/* 月選択 */}
-      <div className="flex items-center justify-center gap-4">
+      {/* Month selector - improved */}
+      <div className="flex items-center justify-between bg-muted/40 rounded-2xl px-2 py-1.5">
         <button
           onClick={() => handleMonthChange(-1)}
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
+          className="p-2 hover:bg-white rounded-xl transition-colors press-effect"
         >
-          ‹
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
         </button>
-        <span className="text-base font-semibold min-w-[120px] text-center">{monthLabel}</span>
+        <span className="text-sm font-bold">{monthLabel}</span>
         <button
           onClick={() => handleMonthChange(1)}
-          className="p-2 rounded-lg hover:bg-accent transition-colors"
+          className="p-2 hover:bg-white rounded-xl transition-colors press-effect"
         >
-          ›
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
 
-      {/* メイン金額 */}
-      <Card className="bg-zinc-900 text-white border-0">
-        <CardContent className="pt-6 pb-6 text-center">
-          <p className="text-sm text-zinc-400 mb-1">概算給与（税引前）</p>
-          {loading ? (
-            <div className="h-10 animate-pulse bg-zinc-800 rounded w-40 mx-auto" />
-          ) : (
-            <p className="text-4xl font-bold tabular-nums tracking-tight">
-              ¥{stats.totalWage.toLocaleString()}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 統計 */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="pt-4 pb-4 text-center">
-            <Clock className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-            <p className="text-2xl font-bold tabular-nums">{stats.totalHours}h</p>
-            <p className="text-xs text-muted-foreground">{monthLabel}の勤務</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4 text-center">
-            <CalendarDays className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-            <p className="text-2xl font-bold tabular-nums">{stats.shiftCount}日</p>
-            <p className="text-xs text-muted-foreground">出勤日数</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* シフト明細 */}
-      {shifts.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">シフト明細</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-                          {Object.entries(
-              shifts.reduce((acc, s) => {
-                const key = s.date
-                if (!acc[key]) acc[key] = []
-                acc[key].push(s)
-                return acc
-              }, {} as Record<string, typeof shifts>)
-            )
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([date, dayShifts]) => {
-                const totalWage = staff
-                  ? Math.round(dayShifts.reduce((sum, s) => sum + calcWage(s.start_time, s.end_time, staff.wage), 0))
-                  : 0
-                const totalHours = Math.round(dayShifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) * 10) / 10
-                return (
-                  <div key={date} className="py-2 border-b last:border-0">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-sm font-medium">
-                          {format(new Date(date + 'T00:00:00'), 'M/d (E)', { locale: ja })}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-2">{totalHours}h</span>
-                      </div>
-                      <p className="text-sm font-medium tabular-nums">¥{totalWage.toLocaleString()}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-x-3 mt-0.5">
-                      {dayShifts.map((s, idx) => (
-                        <span key={idx} className="text-xs text-muted-foreground">
-                          {s.type} {formatTime(s.start_time)}–{s.end_time ? formatTime(s.end_time) : '24:00'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })
-                          }
+      {loading ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="skeleton h-20" />
+            <div className="skeleton h-20" />
+            <div className="skeleton h-20" />
+          </div>
+          <div className="skeleton h-40" />
+        </div>
+      ) : (
+        <>
+          {/* Stats cards - glassmorphism style */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50/50 p-3 ring-1 ring-emerald-100/50 animate-slide-up">
+              <div className="flex items-center gap-1 mb-2">
+                <div className="w-5 h-5 rounded-md bg-emerald-500/10 flex items-center justify-center">
+                  <Wallet className="h-3 w-3 text-emerald-600" />
+                </div>
+                <span className="text-[9px] text-emerald-700/70 font-medium">合計給与</span>
+              </div>
+              <p className="text-base font-extrabold text-emerald-900 tabular-nums leading-none">
+                ¥{Math.floor(stats.totalWage).toLocaleString()}
+              </p>
             </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {!loading && shifts.length === 0 && (
-        <p className="text-center text-sm text-muted-foreground py-8">
-          この月の確定シフトはまだありません
-        </p>
+            <div className="rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50/50 p-3 ring-1 ring-blue-100/50 animate-slide-up" style={{ animationDelay: '60ms' }}>
+              <div className="flex items-center gap-1 mb-2">
+                <div className="w-5 h-5 rounded-md bg-blue-500/10 flex items-center justify-center">
+                  <Clock className="h-3 w-3 text-blue-600" />
+                </div>
+                <span className="text-[9px] text-blue-700/70 font-medium">合計時間</span>
+              </div>
+              <p className="text-base font-extrabold text-blue-900 tabular-nums leading-none">
+                {stats.totalHours}<span className="text-xs font-bold ml-0.5">h</span>
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-gradient-to-br from-purple-50 to-fuchsia-50/50 p-3 ring-1 ring-purple-100/50 animate-slide-up" style={{ animationDelay: '120ms' }}>
+              <div className="flex items-center gap-1 mb-2">
+                <div className="w-5 h-5 rounded-md bg-purple-500/10 flex items-center justify-center">
+                  <CalendarDays className="h-3 w-3 text-purple-600" />
+                </div>
+                <span className="text-[9px] text-purple-700/70 font-medium">勤務日数</span>
+              </div>
+              <p className="text-base font-extrabold text-purple-900 tabular-nums leading-none">
+                {stats.shiftCount}<span className="text-xs font-bold ml-0.5">日</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Shift list */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">シフト詳細</h3>
+            {shifts.length === 0 ? (
+              <div className="flex flex-col items-center py-12 animate-fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-3">
+                  <CalendarDays className="h-5 w-5 text-muted-foreground/30" />
+                </div>
+                <p className="text-xs text-muted-foreground">この月のシフトはありません</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {shifts.map((shift, i) => {
+                  const shiftDate = new Date(shift.date + 'T00:00:00')
+                  const dow = getDay(shiftDate)
+                  const isSunday = dow === 0
+                  const isSaturday = dow === 6
+                  const wage = Math.floor(calcWage(shift.start_time, shift.end_time, staff.wage || 1000))
+                  const hours = calcHours(shift.start_time, shift.end_time)
+
+                  return (
+                    <div
+                      key={shift.id}
+                      className="flex items-center justify-between text-xs p-3 rounded-xl bg-white ring-1 ring-border/40 animate-slide-up"
+                      style={{ animationDelay: `${i * 30}ms` }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center text-center ${
+                          isSunday ? 'bg-red-50 text-red-500' :
+                          isSaturday ? 'bg-blue-50 text-blue-500' :
+                          'bg-muted/50 text-muted-foreground'
+                        }`}>
+                          <span className="text-[10px] font-bold leading-none">{format(shiftDate, 'd')}</span>
+                          <span className="text-[8px] font-medium leading-none mt-0.5">{format(shiftDate, 'E', { locale: ja })}</span>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-[13px]">{formatTime(shift.start_time)} - {formatTime(shift.end_time)}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{hours}時間</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm tabular-nums">¥{wage.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
