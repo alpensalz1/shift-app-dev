@@ -222,6 +222,7 @@ function StaffManagementTab() {
   }
 
   const handleSoftDelete = async (s: Staff) => {
+    if (s.name === 'いっさ') return
     if (!confirm(`${s.name}を削除しますか？\n過去の給与データは保持されます。`)) return
     await supabase.from('staffs').update({ deleted_at: new Date().toISOString(), is_active: false }).eq('id', s.id)
     fetchData()
@@ -257,12 +258,12 @@ function StaffManagementTab() {
         <CardContent className="space-y-3">
           <Input placeholder="名前" value={newName} onChange={e => setNewName(e.target.value)} />
           <div className="flex gap-2">
-            <select value={newType} onChange={e => setNewType(e.target.value)} className="flex-1 h-10 rounded-md border border-input bg-background px-3 text-sm">
+            <select value={newType} onChange={e => { setNewType(e.target.value); if (e.target.value !== 'アルバイト') setNewWage('') }} className="flex-1 h-10 rounded-md border border-input bg-background px-3 text-sm">
               <option value="アルバイト">アルバイト</option>
               <option value="社員">社員</option>
               <option value="役員">役員</option>
             </select>
-            <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24" />
+            {newType === 'アルバイト' && <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24" />}
           </div>
           <Button onClick={handleAddStaff} className="w-full" disabled={!newName.trim()}>登録</Button>
         </CardContent>
@@ -279,7 +280,7 @@ function StaffManagementTab() {
                   <div>
                     <span className="text-sm font-medium">{s.name}</span>
                     <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">{s.employment_type}</span>
-                    {s.wage > 0 && <span className="ml-1 text-xs text-muted-foreground">時給{s.wage}円</span>}
+                    {s.employment_type === 'アルバイト' && s.wage > 0 && <span className="ml-1 text-xs text-muted-foreground">時給{s.wage}円</span>}
                   </div>
                   <div className="flex items-center gap-1">
                     {s.employment_type === 'アルバイト' && (
@@ -288,10 +289,10 @@ function StaffManagementTab() {
                         <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setEditingWage({ staffId: s.id, wage: String(s.wage), effectiveFrom: fmtDate(new Date()) })}>時給変更</Button>
                       </>
                     )}
-                    <Button variant="outline" size="sm" className="text-xs h-7 px-2 text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleSoftDelete(s)}>削除</Button>
+                    {s.name !== 'いっさ' && <Button variant="outline" size="sm" className="text-xs h-7 px-2 text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleSoftDelete(s)}>削除</Button>}
                   </div>
                 </div>
-                {hist.length > 0 && (
+                {s.employment_type === 'アルバイト' && hist.length > 0 && (
                   <div className="mt-1 ml-2 space-y-0.5">
                     {hist.slice(0, 3).map(h => (
                       <p key={h.id} className="text-[10px] text-muted-foreground">{h.effective_from}〜{h.effective_to || '現在'}: {h.wage}円</p>
