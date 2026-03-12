@@ -138,8 +138,8 @@ export default function HomePage() {
         const weekEnd = addDays(weekStart, 6)
 
         const { data, error } = await supabase
-          .from('ShiftFixed')
-          .select('*, staff:Staff(*)')
+          .from('shifts_fixed')
+          .select('*, staff:staffs(*)')
           .gte('date', format(weekStart, 'yyyy-MM-dd'))
           .lte('date', format(weekEnd, 'yyyy-MM-dd'))
 
