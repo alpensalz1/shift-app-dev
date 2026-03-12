@@ -3,17 +3,17 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { Staff, ShiftRequest, ShiftConfig } from '@/types/database'
-import { formatTime } from '@/lib/utils'
+import { Staff, ShiftRequest } from '@/types/database'
+import { formatTime, getSubmissionPeriod } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
-  format, addDays, startOfWeek, addWeeks, eachDayOfInterval, getDay
+  format, eachDayOfInterval, getDay
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   CheckCircle2, XCircle, ChevronLeft, ChevronRight,
-  Send, Users, CalendarDays, Loader2
+  Send, Users, CalendarDays, Loader2, Clock
 } from 'lucide-react'
 
 const SHOPS = [
@@ -21,22 +21,73 @@ const SHOPS = [
   { id: 2, name: '下北沢' },
 ]
 
+// 半月期間の型
+interface HalfMonthPeriod {
+  start: Date
+  end: Date
+  deadline: Date
+  label: string
+}
+
+// オフセットから対象の半月期間を算出
+// offset=0 は getSubmissionPeriod が返す現在の提出対象期間
+function getTargetPeriod(
+  basePeriod: { start: Date; end: Date; deadline: Date },
+  offset: number
+): HalfMonthPeriod {
+  const baseDay = basePeriod.start.getDate()
+  const baseMonth = basePeriod.start.getMonth()
+  const baseYear = basePeriod.start.getFullYear()
+
+  // 半月インデックスに変換（年×24 + 月×2 + half）
+  const baseHalf = baseDay <= 15 ? 0 : 1
+  const totalHalfMonths = baseYear * 24 + baseMonth * 2 + baseHalf + offset
+
+  const targetYear = Math.floor(totalHalfMonths / 24)
+  const remainder = totalHalfMonths - targetYear * 24
+  const targetMonth = Math.floor(remainder / 2)
+  const targetHalf = remainder % 2
+
+  const isFirstHalf = targetHalf === 0
+
+  let start: Date, end: Date
+  if (isFirstHalf) {
+    start = new Date(targetYear, targetMonth, 1)
+    end = new Date(targetYear, targetMonth, 15)
+  } else {
+    start = new Date(targetYear, targetMonth, 16)
+    end = new Date(targetYear, targetMonth + 1, 0) // 月末日
+  }
+
+  // 締め切り: 前半 → 前月20日、後半 → 当月5日
+  let deadline: Date
+  if (isFirstHalf) {
+    deadline = new Date(targetYear, targetMonth - 1, 20)
+  } else {
+    deadline = new Date(targetYear, targetMonth, 5)
+  }
+
+  const label = `${targetMonth + 1}月${isFirstHalf ? '前半' : '後半'}`
+
+  return { start, end, deadline, label }
+}
+
 // =============================================
 // 提出状況サマリーコンポーネント（社員・役員用）
 // =============================================
-function SubmissionOverview({ targetWeekStart, allStaffs }: {
-  targetWeekStart: Date
+function SubmissionOverview({ periodStart, periodEnd, allStaffs }: {
+  periodStart: Date
+  periodEnd: Date
   allStaffs: Staff[]
 }) {
   const [requestsByStaff, setRequestsByStaff] = useState<Record<number, ShiftRequest[]>>({})
   const [loading, setLoading] = useState(true)
 
-  const weekEnd = addDays(targetWeekStart, 6)
-  const startStr = format(targetWeekStart, 'yyyy-MM-dd')
-  const endStr = format(weekEnd, 'yyyy-MM-dd')
+  const startStr = format(periodStart, 'yyyy-MM-dd')
+  const endStr = format(periodEnd, 'yyyy-MM-dd')
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchData = async () => {
       setLoading(true)
       const { data } = await supabase
         .from('shift_requests')
@@ -52,10 +103,13 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
       setRequestsByStaff(grouped)
       setLoading(false)
     }
-    fetch()
+    fetchData()
   }, [startStr, endStr])
 
-  const activeStaffs = allStaffs.filter(s => s.is_active && !s.deleted_at)
+  // いっさ（システム管理者）を提出義務から除外
+  const activeStaffs = allStaffs.filter(s =>
+    s.is_active && !s.deleted_at && s.name !== 'いっさ'
+  )
   const submitted = activeStaffs.filter(s => (requestsByStaff[s.id]?.length || 0) > 0)
   const notSubmitted = activeStaffs.filter(s => !requestsByStaff[s.id] || requestsByStaff[s.id].length === 0)
 
@@ -131,9 +185,10 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
 // =============================================
 // 自分のシフト申請フォーム
 // =============================================
-function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
+function MyShiftForm({ staff, periodStart, periodEnd, onSubmitted }: {
   staff: Staff
-  targetWeekStart: Date
+  periodStart: Date
+  periodEnd: Date
   onSubmitted: () => void
 }) {
   const [myRequests, setMyRequests] = useState<ShiftRequest[]>([])
@@ -141,14 +196,16 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
   const [submitting, setSubmitting] = useState(false)
   const [entries, setEntries] = useState<Record<string, { type: string; startTime: string; endTime: string } | null>>({})
 
-  const weekEnd = addDays(targetWeekStart, 6)
-  const days = useMemo(() => eachDayOfInterval({ start: targetWeekStart, end: weekEnd }), [targetWeekStart, weekEnd])
-  const startStr = format(targetWeekStart, 'yyyy-MM-dd')
-  const endStr = format(weekEnd, 'yyyy-MM-dd')
+  const days = useMemo(
+    () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
+    [periodStart, periodEnd]
+  )
+  const startStr = format(periodStart, 'yyyy-MM-dd')
+  const endStr = format(periodEnd, 'yyyy-MM-dd')
 
   // 既存の申請を取得
   useEffect(() => {
-    const fetch = async () => {
+    const fetchData = async () => {
       setLoading(true)
       const { data } = await supabase
         .from('shift_requests')
@@ -159,7 +216,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
       setMyRequests(data || [])
       setLoading(false)
     }
-    fetch()
+    fetchData()
   }, [staff.id, startStr, endStr])
 
   const hasSubmitted = myRequests.length > 0
@@ -404,16 +461,31 @@ export default function ShiftsPage() {
   const [staff, setStaff] = useState<Staff | null>(null)
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
-  const [targetWeekOffset, setTargetWeekOffset] = useState(1) // デフォルト: 来週
+  const [periodOffset, setPeriodOffset] = useState(0)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const today = useMemo(() => new Date(), [])
-  const targetWeekStart = useMemo(
-    () => startOfWeek(addWeeks(today, targetWeekOffset), { weekStartsOn: 0 }),
-    [today, targetWeekOffset]
+
+  // 現在の提出対象期間を取得（5日まで→当月後半、20日まで→翌月前半）
+  const currentPeriod = useMemo(() => getSubmissionPeriod(today), [today])
+
+  // オフセットを適用した対象期間を計算
+  const targetPeriod = useMemo(
+    () => getTargetPeriod(currentPeriod, periodOffset),
+    [currentPeriod, periodOffset]
   )
 
   const isManager = staff?.employment_type === '社員' || staff?.employment_type === '役員'
+  const isSystemAdmin = staff?.name === 'いっさ'
+
+  // 締め切りまでの残り日数
+  const daysUntilDeadline = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const deadline = new Date(targetPeriod.deadline)
+    deadline.setHours(0, 0, 0, 0)
+    return Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  }, [targetPeriod])
 
   useEffect(() => {
     const init = async () => {
@@ -445,29 +517,47 @@ export default function ShiftsPage() {
         </h1>
       </div>
 
-      {/* 対象週セレクター */}
+      {/* 対象期間セレクター */}
       <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
         <button
-          onClick={() => setTargetWeekOffset(prev => prev - 1)}
+          onClick={() => setPeriodOffset(prev => prev - 1)}
           className="p-1 hover:bg-white rounded-lg transition-colors"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div className="text-center">
           <p className="text-[10px] text-muted-foreground">
-            {targetWeekOffset === 0 ? '今週' : targetWeekOffset === 1 ? '来週' : `${targetWeekOffset}週後`}
+            {periodOffset === 0 ? '現在の提出対象' : periodOffset > 0 ? `${periodOffset}期間先` : `${Math.abs(periodOffset)}期間前`}
           </p>
           <p className="text-sm font-semibold">
-            {format(targetWeekStart, 'M月d日', { locale: ja })} 〜 {format(addDays(targetWeekStart, 6), 'M月d日', { locale: ja })}
+            {targetPeriod.label}
+          </p>
+          <p className="text-[10px] text-muted-foreground">
+            {format(targetPeriod.start, 'M/d', { locale: ja })} 〜 {format(targetPeriod.end, 'M/d', { locale: ja })}
           </p>
         </div>
         <button
-          onClick={() => setTargetWeekOffset(prev => prev + 1)}
+          onClick={() => setPeriodOffset(prev => prev + 1)}
           className="p-1 hover:bg-white rounded-lg transition-colors"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
+
+      {/* 締め切り表示 */}
+      {periodOffset === 0 && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+          daysUntilDeadline <= 2 ? 'bg-red-50 text-red-600' :
+          daysUntilDeadline <= 5 ? 'bg-amber-50 text-amber-600' :
+          'bg-blue-50 text-blue-600'
+        }`}>
+          <Clock className="h-3.5 w-3.5" />
+          <span>
+            締め切り：{format(targetPeriod.deadline, 'M月d日', { locale: ja })}
+            {daysUntilDeadline > 0 ? `（あと${daysUntilDeadline}日）` : daysUntilDeadline === 0 ? '（本日締切）' : '（締切済み）'}
+          </span>
+        </div>
+      )}
 
       {/* 社員・役員: 全員の提出状況 */}
       {isManager && (
@@ -480,27 +570,32 @@ export default function ShiftsPage() {
           </CardHeader>
           <CardContent className="px-3 pb-3">
             <SubmissionOverview
-              key={refreshKey + '-' + format(targetWeekStart, 'yyyy-MM-dd')}
-              targetWeekStart={targetWeekStart}
+              key={refreshKey + '-' + format(targetPeriod.start, 'yyyy-MM-dd')}
+              periodStart={targetPeriod.start}
+              periodEnd={targetPeriod.end}
               allStaffs={allStaffs}
             />
           </CardContent>
         </Card>
       )}
 
-      {/* 自分のシフト申請 */}
+      {/* 自分のシフト申請（システム管理者は任意表示） */}
       <Card>
         <CardHeader className="pb-2 pt-3 px-3">
           <CardTitle className="text-sm flex items-center gap-1.5">
             <Send className="h-4 w-4" />
             {staff.name}のシフト申請
+            {isSystemAdmin && (
+              <span className="text-[10px] text-muted-foreground ml-1">（任意）</span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3 pb-3">
           <MyShiftForm
-            key={refreshKey + '-form-' + format(targetWeekStart, 'yyyy-MM-dd')}
+            key={refreshKey + '-form-' + format(targetPeriod.start, 'yyyy-MM-dd')}
             staff={staff}
-            targetWeekStart={targetWeekStart}
+            periodStart={targetPeriod.start}
+            periodEnd={targetPeriod.end}
             onSubmitted={() => setRefreshKey(prev => prev + 1)}
           />
         </CardContent>
