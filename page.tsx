@@ -17,12 +17,12 @@ import {
 } from 'lucide-react'
 
 const SHOPS = [
-  { id: 1, name: 'ä¸è»è¶å±' },
-  { id: 2, name: 'ä¸åæ²¢' },
+  { id: 1, name: '三軒茶屋' },
+  { id: 2, name: '下北沢' },
 ]
 
 // =============================================
-// æåºç¶æ³ãµããªã¼ã³ã³ãã¼ãã³ãï¼ç¤¾å¡ã»å½¹å¡ç¨ï¼
+// 提出状況サマリーコンポーネント（社員・役員用）
 // =============================================
 function SubmissionOverview({ targetWeekStart, allStaffs }: {
   targetWeekStart: Date
@@ -59,11 +59,11 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
   const submitted = activeStaffs.filter(s => (requestsByStaff[s.id]?.length || 0) > 0)
   const notSubmitted = activeStaffs.filter(s => !requestsByStaff[s.id] || requestsByStaff[s.id].length === 0)
 
-  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
+  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">読み込み中...</div>
 
   return (
     <div className="space-y-3">
-      {/* ãµããªã¼ãã¼ */}
+      {/* サマリーバー */}
       <div className="flex items-center gap-3">
         <div className="flex-1 bg-muted/50 rounded-full h-3 overflow-hidden">
           <div
@@ -76,13 +76,13 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
         </span>
       </div>
 
-      {/* æªæåºè */}
+      {/* 未提出者 */}
       {notSubmitted.length > 0 && (
         <Card className="border-red-200 bg-red-50/30">
           <CardHeader className="pb-1 pt-2 px-3">
             <CardTitle className="text-xs flex items-center gap-1 text-red-600">
               <XCircle className="h-3.5 w-3.5" />
-              æªæåºï¼{notSubmitted.length}åï¼
+              未提出（{notSubmitted.length}名）
             </CardTitle>
           </CardHeader>
           <CardContent className="px-3 pb-2">
@@ -91,7 +91,7 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
                 <span key={s.id} className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">
                   {s.name}
                   <span className="ml-1 text-[9px] opacity-60">
-                    {s.employment_type === 'ã¢ã«ãã¤ã' ? 'ãã¤ã' : s.employment_type}
+                    {s.employment_type === 'アルバイト' ? 'バイト' : s.employment_type}
                   </span>
                 </span>
               ))}
@@ -100,13 +100,13 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
         </Card>
       )}
 
-      {/* æåºæ¸ã¿ */}
+      {/* 提出済み */}
       {submitted.length > 0 && (
         <Card className="border-emerald-200 bg-emerald-50/30">
           <CardHeader className="pb-1 pt-2 px-3">
             <CardTitle className="text-xs flex items-center gap-1 text-emerald-600">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              æåºæ¸ã¿ï¼{submitted.length}åï¼
+              提出済み（{submitted.length}名）
             </CardTitle>
           </CardHeader>
           <CardContent className="px-3 pb-2">
@@ -116,7 +116,7 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
                 return (
                   <span key={s.id} className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
                     {s.name}
-                    <span className="ml-1 text-[9px] opacity-60">{reqs.length}æ¥</span>
+                    <span className="ml-1 text-[9px] opacity-60">{reqs.length}日</span>
                   </span>
                 )
               })}
@@ -129,7 +129,7 @@ function SubmissionOverview({ targetWeekStart, allStaffs }: {
 }
 
 // =============================================
-// èªåã®ã·ããç³è«ãã©ã¼ã 
+// 自分のシフト申請フォーム
 // =============================================
 function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
   staff: Staff
@@ -146,7 +146,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
   const startStr = format(targetWeekStart, 'yyyy-MM-dd')
   const endStr = format(weekEnd, 'yyyy-MM-dd')
 
-  // æ¢å­ã®ç³è«ãåå¾
+  // 既存の申請を取得
   useEffect(() => {
     const fetch = async () => {
       setLoading(true)
@@ -164,17 +164,17 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
 
   const hasSubmitted = myRequests.length > 0
 
-  // å¨æ¥ãåæå¥åã§åããï¼æåã§éå§ï¼
+  // 全日を初期入力で埋める（手動で開始）
   const handleStartEntry = () => {
     const newEntries: typeof entries = {}
     for (const day of days) {
       const dateStr = format(day, 'yyyy-MM-dd')
-      newEntries[dateStr] = { type: 'ä»è¾¼ã¿ã»å¶æ¥­', startTime: '14:00', endTime: '' }
+      newEntries[dateStr] = { type: '仕込み・営業', startTime: '14:00', endTime: '' }
     }
     setEntries(newEntries)
   }
 
-  // æ¥ããªã³/ãªãåãæ¿ã
+  // 日をオン/オフ切り替え
   const toggleDay = (dateStr: string) => {
     setEntries(prev => {
       if (prev[dateStr]) {
@@ -182,7 +182,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
       } else {
         return {
           ...prev,
-          [dateStr]: { type: 'ä»è¾¼ã¿ã»å¶æ¥­', startTime: '14:00', endTime: '' },
+          [dateStr]: { type: '仕込み・営業', startTime: '14:00', endTime: '' },
         }
       }
     })
@@ -195,7 +195,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
     }))
   }
 
-  // æåº
+  // 提出
   const handleSubmit = async () => {
     const toSubmit = Object.entries(entries)
       .filter(([_, e]) => e !== null)
@@ -213,7 +213,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
 
     setSubmitting(true)
     try {
-      // æ¢å­ã®ç³è«ãåé¤ãã¦æ°è¦ä½æ
+      // 既存の申請を削除して新規作成
       await supabase
         .from('shift_requests')
         .delete()
@@ -227,7 +227,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
 
       if (error) throw error
       onSubmitted()
-      // ååå¾
+      // 再取得
       const { data } = await supabase
         .from('shift_requests')
         .select('*')
@@ -243,24 +243,24 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
     }
   }
 
-  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
+  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">読み込み中...</div>
 
-  // æåºæ¸ã¿ãã¥ã¼
+  // 提出済みビュー
   if (hasSubmitted && Object.keys(entries).length === 0) {
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2 px-1">
           <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          <span className="text-sm font-medium text-emerald-700">æåºæ¸ã¿ï¼{myRequests.length}æ¥åï¼</span>
+          <span className="text-sm font-medium text-emerald-700">提出済み（{myRequests.length}日分）</span>
         </div>
         <div className="space-y-1">
           {myRequests
             .sort((a, b) => a.date.localeCompare(b.date))
             .map(r => (
               <div key={r.id} className="flex items-center justify-between px-3 py-1.5 bg-emerald-50/50 rounded-lg text-sm">
-                <span>{format(new Date(r.date + 'T00:00:00'), 'M/dï¼Eï¼', { locale: ja })}</span>
+                <span>{format(new Date(r.date + 'T00:00:00'), 'M/d（E）', { locale: ja })}</span>
                 <span className="text-muted-foreground text-xs">
-                  {r.type} {formatTime(r.start_time)}â{formatTime(r.end_time)}
+                  {r.type} {formatTime(r.start_time)}–{formatTime(r.end_time)}
                 </span>
               </div>
             ))}
@@ -287,18 +287,18 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
             setEntries(newEntries)
           }}
         >
-          ä¿®æ­£ãã
+          修正する
         </Button>
       </div>
     )
   }
 
-  // ç·¨éã¢ã¼ã
+  // 編集モード
   const activeDays = Object.entries(entries).filter(([_, e]) => e !== null).length
 
   return (
     <div className="space-y-3">
-      {/* å¥åéå§ãã¿ã³ */}
+      {/* 入力開始ボタン */}
       {Object.keys(entries).length === 0 && (
         <Button
           onClick={handleStartEntry}
@@ -306,11 +306,11 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
           variant="outline"
         >
           <CalendarDays className="h-4 w-4 mr-2" />
-          ã·ãããå¥åãã
+          シフトを入力する
         </Button>
       )}
 
-      {/* æ¥å¥ã¨ã³ããª */}
+      {/* 日別エントリ */}
       {Object.keys(entries).length > 0 && (
         <>
           <div className="space-y-1.5">
@@ -326,14 +326,14 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
                     onClick={() => toggleDay(dateStr)}
                   >
                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${entry ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
-                      {entry && <span className="text-white text-xs">â</span>}
+                      {entry && <span className="text-white text-xs">✓</span>}
                     </div>
                     <span className={`text-sm font-medium ${isWeekend ? (dow === 0 ? 'text-red-500' : 'text-blue-500') : ''}`}>
-                      {format(day, 'M/dï¼Eï¼', { locale: ja })}
+                      {format(day, 'M/d（E）', { locale: ja })}
                     </span>
                     {entry && (
                       <span className="ml-auto text-xs text-muted-foreground">
-                        {entry.type} {entry.startTime}ã
+                        {entry.type} {entry.startTime}〜
                       </span>
                     )}
                   </div>
@@ -344,9 +344,9 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
                         value={entry.type}
                         onChange={e => updateEntry(dateStr, 'type', e.target.value)}
                       >
-                        <option value="ä»è¾¼ã¿ã»å¶æ¥­">ä»è¾¼ã¿ã»å¶æ¥­</option>
-                        <option value="ä»è¾¼ã¿">ä»è¾¼ã¿ã®ã¿</option>
-                        <option value="å¶æ¥­">å¶æ¥­ã®ã¿</option>
+                        <option value="仕込み・営業">仕込み・営業</option>
+                        <option value="仕込み">仕込みのみ</option>
+                        <option value="営業">営業のみ</option>
                       </select>
                       <input
                         type="time"
@@ -354,12 +354,12 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
                         value={entry.startTime}
                         onChange={e => updateEntry(dateStr, 'startTime', e.target.value)}
                       />
-                      <span className="text-xs self-center">ã</span>
+                      <span className="text-xs self-center">〜</span>
                       <input
                         type="time"
                         className="text-xs border rounded px-1.5 py-1 bg-white"
                         value={entry.endTime}
-                        placeholder="ã©ã¹ã"
+                        placeholder="ラスト"
                         onChange={e => updateEntry(dateStr, 'endTime', e.target.value)}
                       />
                     </div>
@@ -376,7 +376,7 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
               className="flex-1"
               onClick={() => setEntries({})}
             >
-              ã¯ãªã¢
+              クリア
             </Button>
             <Button
               size="sm"
@@ -385,9 +385,9 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
               onClick={handleSubmit}
             >
               {submitting ? (
-                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />éä¿¡ä¸­</>
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />送信中</>
               ) : (
-                <><Send className="h-4 w-4 mr-1" />{activeDays}æ¥åãæåº</>
+                <><Send className="h-4 w-4 mr-1" />{activeDays}日分を提出</>
               )}
             </Button>
           </div>
@@ -398,13 +398,13 @@ function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
 }
 
 // =============================================
-// ã¡ã¤ã³ãã¼ã¸
+// メインページ
 // =============================================
 export default function ShiftsPage() {
   const [staff, setStaff] = useState<Staff | null>(null)
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
-  const [targetWeekOffset, setTargetWeekOffset] = useState(1) // ããã©ã«ã: æ¥é±
+  const [targetWeekOffset, setTargetWeekOffset] = useState(1) // デフォルト: 来週
   const [refreshKey, setRefreshKey] = useState(0)
 
   const today = useMemo(() => new Date(), [])
@@ -413,7 +413,7 @@ export default function ShiftsPage() {
     [today, targetWeekOffset]
   )
 
-  const isManager = staff?.employment_type === 'ç¤¾å¡' || staff?.employment_type === 'å½¹å¡'
+  const isManager = staff?.employment_type === '社員' || staff?.employment_type === '役員'
 
   useEffect(() => {
     const init = async () => {
@@ -432,20 +432,20 @@ export default function ShiftsPage() {
   }, [])
 
   if (loading || !staff) {
-    return <div className="flex items-center justify-center min-h-[50vh] text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
+    return <div className="flex items-center justify-center min-h-[50vh] text-sm text-muted-foreground">読み込み中...</div>
   }
 
   return (
     <div className="px-4 pt-3 pb-24 max-w-lg mx-auto space-y-4">
-      {/* ãããã¼ */}
+      {/* ヘッダー */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold flex items-center gap-2">
           <CalendarDays className="h-5 w-5" />
-          ã·ããç³è«
+          シフト申請
         </h1>
       </div>
 
-      {/* å¯¾è±¡é±ã»ã¬ã¯ã¿ã¼ */}
+      {/* 対象週セレクター */}
       <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
         <button
           onClick={() => setTargetWeekOffset(prev => prev - 1)}
@@ -455,10 +455,10 @@ export default function ShiftsPage() {
         </button>
         <div className="text-center">
           <p className="text-[10px] text-muted-foreground">
-            {targetWeekOffset === 0 ? 'ä»é±' : targetWeekOffset === 1 ? 'æ¥é±' : `${targetWeekOffset}é±å¾`}
+            {targetWeekOffset === 0 ? '今週' : targetWeekOffset === 1 ? '来週' : `${targetWeekOffset}週後`}
           </p>
           <p className="text-sm font-semibold">
-            {format(targetWeekStart, 'Mædæ¥', { locale: ja })} ã {format(addDays(targetWeekStart, 6), 'Mædæ¥', { locale: ja })}
+            {format(targetWeekStart, 'M月d日', { locale: ja })} 〜 {format(addDays(targetWeekStart, 6), 'M月d日', { locale: ja })}
           </p>
         </div>
         <button
@@ -469,13 +469,13 @@ export default function ShiftsPage() {
         </button>
       </div>
 
-      {/* ç¤¾å¡ã»å½¹å¡: å¨å¡ã®æåºç¶æ³ */}
+      {/* 社員・役員: 全員の提出状況 */}
       {isManager && (
         <Card>
           <CardHeader className="pb-2 pt-3 px-3">
             <CardTitle className="text-sm flex items-center gap-1.5">
               <Users className="h-4 w-4" />
-              ã¡ã³ãã¼æåºç¶æ³
+              メンバー提出状況
             </CardTitle>
           </CardHeader>
           <CardContent className="px-3 pb-3">
@@ -488,12 +488,12 @@ export default function ShiftsPage() {
         </Card>
       )}
 
-      {/* èªåã®ã·ããç³è« */}
+      {/* 自分のシフト申請 */}
       <Card>
         <CardHeader className="pb-2 pt-3 px-3">
           <CardTitle className="text-sm flex items-center gap-1.5">
             <Send className="h-4 w-4" />
-            {staff.name}ã®ã·ããç³è«
+            {staff.name}のシフト申請
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3 pb-3">
