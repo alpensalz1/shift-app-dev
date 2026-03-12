@@ -508,7 +508,45 @@ function FullTimeForm({
         const sel = new Set<string>()
         data.forEach((r: OffRequest) => sel.add(r.date.substring(0, 10)))
         setRestDays(sel)
-        // typeとcount��8�8(�898+�8;�8;>8).[�XX0�6��7Bf�'7EG�R�FF���G�R27G&��p��b�f�'7EG�R���~K�^���8�8�8�r�6WE&W7D��FR�sVF�5�&Wr��V�6R�b�f�'7EG�R���~YknjZ�8�8�r�6WE&W7D��FR�sVF�5�6W'f�6Rr��V�6R�b�FF��V�wF���b�6WE&W7D��FR�sfF�2r��V�6R6WE&W7D��FR�sVF�2r��Т6WD��F��tW��7F��r�f�6R��Т��B������7Ffb�B�W&��E7F'B�W&��DV�EҐ��gV�7F���F�vv�U&W7DF��F��7G&��r����b�&W7D��FR�&WGW&�6WE&W7DF�2��&Wb�����6��7B�W�B��Wr6WB�&Wb���b��W�B�2�F������W�B�FV�WFR�F����V�6R�b��W�B�6��R�&WV�&VB����W�B�FB�F���Т&WGW&��W�@�Ґ�Р�7��2gV�7F�����F�U7V&֗B�����b���FT6��f�r�&WGW&�6WE7V&֗GF��r�G'VR��G'���6��7B7F'D�W��f�D�W��W&��E7F'B��6��7BV�D�W��f�D�W��W&��DV�B����iz.ZَX����@�v�B7W&6P��g&�҂v�fe�&WVW7G2r���FV�WFR����W�w7Ffe��Br�7Ffb�B���wFR�vFFRr�7F'D�W�����FR�vFFRr�V�D�W�����ik�h�o入
+        // typeとcountからパターンを復元
+        const firstType = data[0].type as string
+        if (firstType === '仕込みのみ') setRestMode('5days_prep')
+        else if (firstType === '営業のみ') setRestMode('5days_service')
+        else if (data.length >= 6) setRestMode('6days')
+        else setRestMode('5days')
+      }
+      setLoadingExisting(false)
+    }
+    load()
+  }, [staff.id, periodStart, periodEnd])
+
+  function toggleRestDay(dk: string) {
+    if (!restMode) return
+    setRestDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(dk)) {
+        next.delete(dk)
+      } else if (next.size < required) {
+        next.add(dk)
+      }
+      return next
+    })
+  }
+
+  async function handleSubmit() {
+    if (!modeConfig) return
+    setSubmitting(true)
+    try {
+      const startKey = fmtKey(periodStart)
+      const endKey = fmtKey(periodEnd)
+      // 既存削除
+      await supabase
+        .from('off_requests')
+        .delete()
+        .eq('staff_id', staff.id)
+        .gte('date', startKey)
+        .lte('date', endKey)
+      // 新規挿入
       const rows = [...restDays].map((dk) => ({
         staff_id: staff.id,
         date: dk,
@@ -804,7 +842,7 @@ function SuccessCard({ message }: { message: string }) {
         <CheckCircle2 className="h-8 w-8 text-emerald-600" />
       </div>
       <p className="text-lg font-bold text-foreground">{message}</p>
-      <p className="text-sm text-muted-foreground">ありがとうございました</p>
+      <p className="text-sm text-muted-foreground">うりがとうございました</p>
     </div>
   )
 }
