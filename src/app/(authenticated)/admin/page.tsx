@@ -4,14 +4,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { calcWage, calcHours } from '@/lib/utils'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
   ChevronLeft, ChevronRight, Loader2, Plus,
-  DollarSign, AlertTriangle, CheckCircle, X
+  DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase
 } from 'lucide-react'
 
 type Tab = 'labor' | 'staff' | 'fulfillment' | 'closed' | 'report'
@@ -74,19 +73,26 @@ export default function AdminPage() {
   const monthLabel = `${y}年${m}月`
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <BarChart2 className="h-5 w-5" />
-        <h1 className="text-lg font-bold">管理</h1>
+    <div className="px-4 pt-3 pb-24 space-y-4">
+      {/* Header */}
+      <div>
+        <h2 className="text-lg font-bold flex items-center gap-2 tracking-tight">
+          <BarChart2 className="h-5 w-5" />
+          管理
+        </h2>
+        <p className="text-xs text-muted-foreground mt-0.5">店舗運営データの確認・管理</p>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto pb-1 -mx-1 px-1">
+      {/* Tab navigation - scrollable pills */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-              tab === t.key ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all press-effect ${
+              tab === t.key
+                ? 'bg-foreground text-background shadow-sm'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
             }`}
           >
             <t.icon className="h-3.5 w-3.5" />
@@ -95,11 +101,22 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {/* Month selector */}
       {['labor', 'fulfillment', 'report'].includes(tab) && (
-        <div className="flex items-center justify-center gap-4">
-          <button onClick={() => changeMonth(-1)} className="p-1"><ChevronLeft className="h-5 w-5" /></button>
-          <span className="text-base font-semibold">{monthLabel}</span>
-          <button onClick={() => changeMonth(1)} className="p-1"><ChevronRight className="h-5 w-5" /></button>
+        <div className="flex items-center justify-between bg-muted/40 rounded-2xl px-2 py-1.5">
+          <button
+            onClick={() => changeMonth(-1)}
+            className="p-2 hover:bg-white rounded-xl transition-colors press-effect"
+          >
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <span className="text-sm font-bold">{monthLabel}</span>
+          <button
+            onClick={() => changeMonth(1)}
+            className="p-2 hover:bg-white rounded-xl transition-colors press-effect"
+          >
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
         </div>
       )}
 
@@ -112,7 +129,7 @@ export default function AdminPage() {
   )
 }
 
-/* ── 人件費タブ（wage_history対応） ── */
+/* ── 人件費タブ ── */
 function LaborCostTab({ month }: { month: string }) {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [shifts, setShifts] = useState<ShiftFixed[]>([])
@@ -135,7 +152,12 @@ function LaborCostTab({ month }: { month: string }) {
     })
   }, [month])
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="skeleton h-16 w-full" />
+      <div className="skeleton h-40 w-full" />
+    </div>
+  )
 
   const staffWages = staffs.map(s => {
     const ss = shifts.filter(sh => sh.staff_id === s.id)
@@ -151,35 +173,52 @@ function LaborCostTab({ month }: { month: string }) {
   const total = staffWages.reduce((s, w) => s + w.wage, 0)
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <DollarSign className="h-4 w-4" />アルバイト人件費
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">確定シフトをもとに算出（時給変更履歴対応）</p>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {staffWages.map(({ staff, count, hours, wage }) => (
-          <div key={staff.id} className={`flex items-center justify-between py-2 border-b last:border-0 ${staff.deleted_at ? 'opacity-50' : ''}`}>
-            <div>
-              <p className="text-sm font-medium">{staff.name}{staff.deleted_at ? ' (退職)' : ''}</p>
-              <p className="text-xs text-muted-foreground">
-                {count}シフト / {hours.toFixed(1)}時間 / 時給{(getWageForDate(wageHistories, staff.id, `${month}-01`) ?? staff.wage)}円
-              </p>
-            </div>
-            <span className="text-sm font-semibold">{Math.round(wage).toLocaleString()}円</span>
+    <div className="space-y-3 animate-fade-in">
+      {/* Total summary card */}
+      <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50/50 p-4 ring-1 ring-emerald-100/50">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+            <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
           </div>
-        ))}
-        <div className="flex items-center justify-between pt-3 border-t-2">
-          <span className="font-bold">合計人件費</span>
-          <span className="text-lg font-bold">{Math.round(total).toLocaleString()}円</span>
+          <span className="text-xs text-emerald-700/70 font-medium">アルバイト人件費合計</span>
         </div>
-      </CardContent>
-    </Card>
+        <p className="text-2xl font-extrabold text-emerald-900 tabular-nums">
+          ¥{Math.round(total).toLocaleString()}
+        </p>
+        <p className="text-[10px] text-emerald-600/60 mt-1">確定シフトをもとに算出（時給変更履歴対応）</p>
+      </div>
+
+      {/* Staff breakdown */}
+      <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
+        <div className="px-3 py-2.5 border-b border-border/30">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">スタッフ別内訳</h3>
+        </div>
+        <div className="divide-y divide-border/30">
+          {staffWages.map(({ staff, count, hours, wage }, i) => (
+            <div
+              key={staff.id}
+              className={`flex items-center justify-between px-3 py-2.5 animate-slide-up ${staff.deleted_at ? 'opacity-40' : ''}`}
+              style={{ animationDelay: `${i * 30}ms` }}
+            >
+              <div>
+                <p className="text-[13px] font-semibold">
+                  {staff.name}
+                  {staff.deleted_at && <span className="ml-1 text-[10px] text-muted-foreground">(退職)</span>}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {count}シフト / {hours.toFixed(1)}h / ¥{(getWageForDate(wageHistories, staff.id, `${month}-01`) ?? staff.wage).toLocaleString()}/h
+                </p>
+              </div>
+              <span className="text-sm font-bold tabular-nums">¥{Math.round(wage).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
-/* ── スタッフ管理タブ（ソフトデリート＋時給履歴） ── */
+/* ── スタッフ管理タブ ── */
 function StaffManagementTab() {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
@@ -249,74 +288,140 @@ function StaffManagementTab() {
     fetchData()
   }
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="skeleton h-32 w-full" />
+      <div className="skeleton h-48 w-full" />
+    </div>
+  )
+
+  const typeColors: Record<string, string> = {
+    'アルバイト': 'bg-blue-100/80 text-blue-700',
+    '社員': 'bg-zinc-200/60 text-zinc-600',
+    '役員': 'bg-amber-100/80 text-amber-700',
+    '長期': 'bg-purple-100/80 text-purple-700',
+  }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">新規スタッフ登録</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <Input placeholder="名前" value={newName} onChange={e => setNewName(e.target.value)} />
+    <div className="space-y-3 animate-fade-in">
+      {/* Add staff form */}
+      <div className="rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50/50 p-4 ring-1 ring-blue-100/50">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center">
+            <Plus className="h-3.5 w-3.5 text-blue-600" />
+          </div>
+          <span className="text-xs font-bold text-blue-900">新規スタッフ登録</span>
+        </div>
+        <div className="space-y-2">
+          <Input placeholder="名前" value={newName} onChange={e => setNewName(e.target.value)} className="bg-white/80 border-blue-200/50 text-sm h-9" />
           <div className="flex gap-2">
-            <select value={newType} onChange={e => { setNewType(e.target.value); if (e.target.value !== 'アルバイト') setNewWage('') }} className="flex-1 h-10 rounded-md border border-input bg-background px-3 text-sm">
+            <select
+              value={newType}
+              onChange={e => { setNewType(e.target.value); if (e.target.value !== 'アルバイト') setNewWage('') }}
+              className="flex-1 h-9 rounded-lg border border-blue-200/50 bg-white/80 px-3 text-sm"
+            >
               <option value="アルバイト">アルバイト</option>
               <option value="社員">社員</option>
               <option value="役員">役員</option>
             </select>
-            {newType === 'アルバイト' && <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24" />}
+            {newType === 'アルバイト' && (
+              <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24 bg-white/80 border-blue-200/50 text-sm h-9" />
+            )}
           </div>
-          <Button onClick={handleAddStaff} className="w-full" disabled={!newName.trim()}>登録</Button>
-        </CardContent>
-      </Card>
+          <button
+            onClick={handleAddStaff}
+            disabled={!newName.trim()}
+            className="w-full h-9 rounded-lg bg-blue-600 text-white text-xs font-bold transition-all hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed press-effect"
+          >
+            登録
+          </button>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">スタッフ一覧（{staffs.length}名）</CardTitle></CardHeader>
-        <CardContent className="space-y-1">
-          {staffs.map(s => {
+      {/* Staff list */}
+      <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
+        <div className="px-3 py-2.5 border-b border-border/30 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">スタッフ一覧</h3>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{staffs.length}名</span>
+        </div>
+        <div className="divide-y divide-border/30">
+          {staffs.map((s, i) => {
             const hist = wageHistories.filter(w => w.staff_id === s.id)
             return (
-              <div key={s.id} className="py-2 border-b last:border-0">
+              <div key={s.id} className="px-3 py-2.5 animate-slide-up" style={{ animationDelay: `${i * 25}ms` }}>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-sm font-medium">{s.name}</span>
-                    <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">{s.employment_type}</span>
-                    {s.employment_type === 'アルバイト' && s.wage > 0 && <span className="ml-1 text-xs text-muted-foreground">時給{s.wage}円</span>}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[13px] font-semibold truncate">{s.name}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${typeColors[s.employment_type] || 'bg-gray-100 text-gray-600'}`}>
+                      {s.employment_type}
+                    </span>
+                    {s.employment_type === 'アルバイト' && s.wage > 0 && (
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">¥{s.wage.toLocaleString()}/h</span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
                     {s.employment_type === 'アルバイト' && (
                       <>
-                        <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => handleToggleType(s, '社員')}>→社員</Button>
-                        <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setEditingWage({ staffId: s.id, wage: String(s.wage), effectiveFrom: fmtDate(new Date()) })}>時給変更</Button>
+                        <button
+                          onClick={() => handleToggleType(s, '社員')}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-muted/60 text-muted-foreground hover:bg-muted transition-colors press-effect"
+                        >
+                          →社員
+                        </button>
+                        <button
+                          onClick={() => setEditingWage({ staffId: s.id, wage: String(s.wage), effectiveFrom: fmtDate(new Date()) })}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-muted/60 text-muted-foreground hover:bg-muted transition-colors press-effect"
+                        >
+                          時給変更
+                        </button>
                       </>
                     )}
-                    {s.name !== 'いっさ' && <Button variant="outline" size="sm" className="text-xs h-7 px-2 text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleSoftDelete(s)}>削除</Button>}
+                    {s.name !== 'いっさ' && (
+                      <button
+                        onClick={() => handleSoftDelete(s)}
+                        className="text-[10px] px-2 py-1 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors press-effect"
+                      >
+                        削除
+                      </button>
+                    )}
                   </div>
                 </div>
                 {s.employment_type === 'アルバイト' && hist.length > 0 && (
-                  <div className="mt-1 ml-2 space-y-0.5">
+                  <div className="mt-1.5 ml-1 space-y-0.5">
                     {hist.slice(0, 3).map(h => (
-                      <p key={h.id} className="text-[10px] text-muted-foreground">{h.effective_from}〜{h.effective_to || '現在'}: {h.wage}円</p>
+                      <p key={h.id} className="text-[10px] text-muted-foreground/70 tabular-nums">
+                        {h.effective_from} ~ {h.effective_to || '現在'}: ¥{h.wage.toLocaleString()}
+                      </p>
                     ))}
                   </div>
                 )}
               </div>
             )
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
+      {/* Wage edit modal */}
       {editingWage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingWage(null)}>
-          <div className="bg-white rounded-xl p-5 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold mb-3">時給変更</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingWage(null)}>
+          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl ring-1 ring-border/20 animate-slide-up" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold mb-4">時給変更</h3>
             <div className="space-y-3">
-              <div><label className="text-xs text-muted-foreground">新しい時給</label>
-                <Input type="number" value={editingWage.wage} onChange={e => setEditingWage({ ...editingWage, wage: e.target.value })} /></div>
-              <div><label className="text-xs text-muted-foreground">適用開始日</label>
-                <Input type="date" value={editingWage.effectiveFrom} onChange={e => setEditingWage({ ...editingWage, effectiveFrom: e.target.value })} /></div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setEditingWage(null)}>キャンセル</Button>
-                <Button className="flex-1" onClick={handleWageChange}>保存</Button>
+              <div>
+                <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">新しい時給</label>
+                <Input type="number" value={editingWage.wage} onChange={e => setEditingWage({ ...editingWage, wage: e.target.value })} className="mt-1" />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">適用開始日</label>
+                <Input type="date" value={editingWage.effectiveFrom} onChange={e => setEditingWage({ ...editingWage, effectiveFrom: e.target.value })} className="mt-1" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditingWage(null)} className="flex-1 h-9 rounded-lg border border-border text-sm font-medium hover:bg-muted/50 transition-colors press-effect">
+                  キャンセル
+                </button>
+                <button onClick={handleWageChange} className="flex-1 h-9 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity press-effect">
+                  保存
+                </button>
               </div>
             </div>
           </div>
@@ -352,7 +457,12 @@ function FulfillmentTab({ month }: { month: string }) {
     })
   }, [month])
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="skeleton h-32 w-full" />
+      <div className="skeleton h-32 w-full" />
+    </div>
+  )
 
   const [y, m] = month.split('-').map(Number)
   const days = new Date(y, m, 0).getDate()
@@ -374,35 +484,71 @@ function FulfillmentTab({ month }: { month: string }) {
     return { shop, rate: req > 0 ? (fill / req) * 100 : 100, req, fill, shortages }
   })
 
+  const rateColor = (rate: number) => rate >= 90 ? 'emerald' : rate >= 70 ? 'amber' : 'red'
+
   return (
-    <div className="space-y-4">
-      {shopData.map(({ shop, rate, req, fill, shortages }) => (
-        <Card key={shop.id}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span>{shop.name}</span>
-              <span className={`text-lg font-bold ${rate >= 90 ? 'text-green-600' : rate >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>{rate.toFixed(0)}%</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="w-full bg-zinc-100 rounded-full h-2 mb-3">
-              <div className={`h-2 rounded-full ${rate >= 90 ? 'bg-green-500' : rate >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${Math.min(rate, 100)}%` }} />
+    <div className="space-y-3 animate-fade-in">
+      {shopData.map(({ shop, rate, req, fill, shortages }, i) => {
+        const color = rateColor(rate)
+        return (
+          <div
+            key={shop.id}
+            className={`rounded-xl p-4 ring-1 animate-slide-up ${
+              color === 'emerald' ? 'bg-gradient-to-br from-emerald-50 to-green-50/50 ring-emerald-100/50' :
+              color === 'amber' ? 'bg-gradient-to-br from-amber-50 to-yellow-50/50 ring-amber-100/50' :
+              'bg-gradient-to-br from-red-50 to-rose-50/50 ring-red-100/50'
+            }`}
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-bold">{shop.name}</span>
+              <span className={`text-xl font-extrabold tabular-nums ${
+                color === 'emerald' ? 'text-emerald-700' : color === 'amber' ? 'text-amber-700' : 'text-red-700'
+              }`}>
+                {rate.toFixed(0)}%
+              </span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">必要枠 {req} / 充足 {fill}</p>
+
+            {/* Progress bar */}
+            <div className="w-full bg-white/60 rounded-full h-2 mb-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-500 ${
+                  color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-red-500'
+                }`}
+                style={{ width: `${Math.min(rate, 100)}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2 tabular-nums">必要枠 {req} / 充足 {fill}</p>
+
             {shortages.length > 0 ? (
               <div>
-                <p className="text-xs font-medium text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />人員不足（{shortages.length}件）</p>
-                <div className="max-h-32 overflow-y-auto space-y-0.5 mt-1">
-                  {shortages.slice(0, 10).map((s, i) => <p key={i} className="text-[11px] text-muted-foreground pl-4">{s.date} {s.type}: {s.actual}/{s.required}名</p>)}
-                  {shortages.length > 10 && <p className="text-[11px] text-muted-foreground pl-4">...他{shortages.length - 10}件</p>}
+                <p className={`text-[11px] font-medium flex items-center gap-1 ${
+                  color === 'red' ? 'text-red-600' : 'text-amber-600'
+                }`}>
+                  <AlertTriangle className="h-3 w-3" />
+                  人員不足（{shortages.length}件）
+                </p>
+                <div className="max-h-28 overflow-y-auto space-y-0.5 mt-1">
+                  {shortages.slice(0, 8).map((s, j) => (
+                    <p key={j} className="text-[10px] text-muted-foreground pl-4 tabular-nums">
+                      {s.date} {s.type}: {s.actual}/{s.required}名
+                    </p>
+                  ))}
+                  {shortages.length > 8 && (
+                    <p className="text-[10px] text-muted-foreground/60 pl-4">...他{shortages.length - 8}件</p>
+                  )}
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="h-3 w-3" />全日充足</p>
+              <p className={`text-[11px] font-medium flex items-center gap-1 ${
+                color === 'emerald' ? 'text-emerald-600' : ''
+              }`}>
+                <CheckCircle className="h-3 w-3" />全日充足
+              </p>
             )}
-          </CardContent>
-        </Card>
-      ))}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -440,51 +586,91 @@ function ClosedDatesTab() {
     fetch_()
   }
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="skeleton h-40 w-full" />
+    </div>
+  )
 
   const today = fmtDate(new Date())
   const upcoming = closedDates.filter(cd => cd.date >= today)
   const past = closedDates.filter(cd => cd.date < today)
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CalendarOff className="h-4 w-4" />休業日を追加</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
-          <select value={newShopId} onChange={e => setNewShopId(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+    <div className="space-y-3 animate-fade-in">
+      {/* Add form */}
+      <div className="rounded-xl bg-gradient-to-br from-purple-50 to-fuchsia-50/50 p-4 ring-1 ring-purple-100/50">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-6 h-6 rounded-lg bg-purple-500/10 flex items-center justify-center">
+            <CalendarOff className="h-3.5 w-3.5 text-purple-600" />
+          </div>
+          <span className="text-xs font-bold text-purple-900">休業日を追加</span>
+        </div>
+        <div className="space-y-2">
+          <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="bg-white/80 border-purple-200/50 text-sm h-9" />
+          <select
+            value={newShopId}
+            onChange={e => setNewShopId(e.target.value)}
+            className="w-full h-9 rounded-lg border border-purple-200/50 bg-white/80 px-3 text-sm"
+          >
             <option value="">全店舗</option>
             {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <Input placeholder="備考（例：臨時休業）" value={newNote} onChange={e => setNewNote(e.target.value)} />
-          <Button onClick={handleAdd} className="w-full" disabled={!newDate}><Plus className="h-4 w-4 mr-1" />休業日を登録</Button>
-        </CardContent>
-      </Card>
+          <Input placeholder="備考（例：臨時休業）" value={newNote} onChange={e => setNewNote(e.target.value)} className="bg-white/80 border-purple-200/50 text-sm h-9" />
+          <button
+            onClick={handleAdd}
+            disabled={!newDate}
+            className="w-full h-9 rounded-lg bg-purple-600 text-white text-xs font-bold transition-all hover:bg-purple-700 disabled:opacity-40 press-effect flex items-center justify-center gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />休業日を登録
+          </button>
+        </div>
+      </div>
 
+      {/* Upcoming */}
       {upcoming.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">今後の休業日（{upcoming.length}件）</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {upcoming.map(cd => (
-              <div key={cd.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
+        <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-border/30 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">今後の休業日</h3>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100/80 text-red-600 font-medium">{upcoming.length}件</span>
+          </div>
+          <div className="divide-y divide-border/30">
+            {upcoming.map((cd, i) => (
+              <div key={cd.id} className="flex items-center justify-between px-3 py-2.5 animate-slide-up" style={{ animationDelay: `${i * 30}ms` }}>
                 <div>
-                  <p className="text-sm font-medium">{cd.date}</p>
-                  <p className="text-xs text-muted-foreground">{cd.shop_id ? shops.find(s => s.id === cd.shop_id)?.name : '全店舗'}{cd.note ? ` - ${cd.note}` : ''}</p>
+                  <p className="text-[13px] font-semibold tabular-nums">{cd.date}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {cd.shop_id ? shops.find(s => s.id === cd.shop_id)?.name : '全店舗'}
+                    {cd.note ? ` - ${cd.note}` : ''}
+                  </p>
                 </div>
-                <button onClick={() => handleDel(cd.id)} className="p-1 text-red-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+                <button
+                  onClick={() => handleDel(cd.id)}
+                  className="p-1.5 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 transition-colors press-effect"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
+      {/* Past */}
       {past.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">過去の休業日（{past.length}件）</CardTitle></CardHeader>
-          <CardContent className="space-y-1">
-            {past.slice(0, 5).map(cd => <p key={cd.id} className="text-xs text-muted-foreground">{cd.date} - {cd.shop_id ? shops.find(s => s.id === cd.shop_id)?.name : '全店舗'}{cd.note ? ` (${cd.note})` : ''}</p>)}
-          </CardContent>
-        </Card>
+        <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden opacity-60">
+          <div className="px-3 py-2.5 border-b border-border/30">
+            <h3 className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider">過去の休業日（{past.length}件）</h3>
+          </div>
+          <div className="px-3 py-2 space-y-0.5">
+            {past.slice(0, 5).map(cd => (
+              <p key={cd.id} className="text-[10px] text-muted-foreground/60 tabular-nums">
+                {cd.date} - {cd.shop_id ? shops.find(s => s.id === cd.shop_id)?.name : '全店舗'}
+                {cd.note ? ` (${cd.note})` : ''}
+              </p>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
@@ -512,7 +698,16 @@ function MonthlyReportTab({ month }: { month: string }) {
     })
   }, [month])
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="skeleton h-20" />
+        <div className="skeleton h-20" />
+        <div className="skeleton h-20" />
+        <div className="skeleton h-20" />
+      </div>
+    </div>
+  )
 
   const [y, m] = month.split('-').map(Number)
   const ml = `${y}年${m}月`
@@ -535,45 +730,72 @@ function MonthlyReportTab({ month }: { month: string }) {
   const avgH = totalShifts > 0 ? shifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) / totalShifts : 0
   const shopStats = shops.map(sp => ({ name: sp.name, count: shifts.filter(s => s.shop_id === sp.id).length }))
 
+  const statCards = [
+    { label: '総シフト数', value: String(totalShifts), sub: `${uniqueDays}営業日`, color: 'from-blue-50 to-indigo-50/50', ring: 'ring-blue-100/50', textColor: 'text-blue-900', icon: Briefcase, iconColor: 'text-blue-600', iconBg: 'bg-blue-500/10' },
+    { label: '人件費', value: `¥${Math.round(totalWage).toLocaleString()}`, sub: 'アルバイト', color: 'from-emerald-50 to-teal-50/50', ring: 'ring-emerald-100/50', textColor: 'text-emerald-900', icon: DollarSign, iconColor: 'text-emerald-600', iconBg: 'bg-emerald-500/10' },
+    { label: '総労働時間', value: `${totalHours.toFixed(1)}h`, sub: '', color: 'from-purple-50 to-fuchsia-50/50', ring: 'ring-purple-100/50', textColor: 'text-purple-900', icon: Clock, iconColor: 'text-purple-600', iconBg: 'bg-purple-500/10' },
+    { label: '平均シフト', value: `${avgH.toFixed(1)}h`, sub: '', color: 'from-amber-50 to-orange-50/50', ring: 'ring-amber-100/50', textColor: 'text-amber-900', icon: TrendingUp, iconColor: 'text-amber-600', iconBg: 'bg-amber-500/10' },
+  ]
+
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2"><FileText className="h-4 w-4" />{ml} 月次レポート</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-zinc-50 rounded-lg p-3">
-            <p className="text-xs text-muted-foreground">総シフト数</p>
-            <p className="text-xl font-bold">{totalShifts}</p>
-            <p className="text-[10px] text-muted-foreground">{uniqueDays}営業日</p>
-          </div>
-          <div className="bg-zinc-50 rounded-lg p-3">
-            <p className="text-xs text-muted-foreground">アルバイト人件費</p>
-            <p className="text-xl font-bold">{Math.round(totalWage).toLocaleString()}<span className="text-sm">円</span></p>
-          </div>
-          <div className="bg-zinc-50 rounded-lg p-3">
-            <p className="text-xs text-muted-foreground">総労働時間</p>
-            <p className="text-xl font-bold">{totalHours.toFixed(1)}<span className="text-sm">h</span></p>
-          </div>
-          <div className="bg-zinc-50 rounded-lg p-3">
-            <p className="text-xs text-muted-foreground">平均シフト時間</p>
-            <p className="text-xl font-bold">{avgH.toFixed(1)}<span className="text-sm">h</span></p>
-          </div>
+    <div className="space-y-3 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <div className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
         </div>
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">店舗別シフト数</p>
-          {shopStats.map(s => (
-            <div key={s.name} className="flex justify-between py-1">
-              <span className="text-sm">{s.name}</span>
-              <span className="text-sm font-semibold">{s.count}シフト</span>
+        <span className="text-xs font-bold text-muted-foreground">{ml} レポート</span>
+      </div>
+
+      {/* Stat cards grid */}
+      <div className="grid grid-cols-2 gap-2">
+        {statCards.map((card, i) => (
+          <div
+            key={card.label}
+            className={`rounded-xl bg-gradient-to-br ${card.color} p-3 ring-1 ${card.ring} animate-slide-up`}
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
+            <div className="flex items-center gap-1 mb-2">
+              <div className={`w-5 h-5 rounded-md ${card.iconBg} flex items-center justify-center`}>
+                <card.icon className={`h-3 w-3 ${card.iconColor}`} />
+              </div>
+              <span className="text-[9px] font-medium opacity-70">{card.label}</span>
+            </div>
+            <p className={`text-base font-extrabold ${card.textColor} tabular-nums leading-none`}>
+              {card.value}
+            </p>
+            {card.sub && <p className="text-[9px] opacity-50 mt-1">{card.sub}</p>}
+          </div>
+        ))}
+      </div>
+
+      {/* Shop breakdown */}
+      <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
+        <div className="px-3 py-2.5 border-b border-border/30">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">店舗別シフト数</h3>
+        </div>
+        <div className="divide-y divide-border/30">
+          {shopStats.map((s, i) => (
+            <div key={s.name} className="flex justify-between items-center px-3 py-2.5 animate-slide-up" style={{ animationDelay: `${(i + 4) * 60}ms` }}>
+              <span className="text-[13px] font-medium">{s.name}</span>
+              <span className="text-sm font-bold tabular-nums">{s.count}<span className="text-[10px] font-medium text-muted-foreground ml-0.5">シフト</span></span>
             </div>
           ))}
         </div>
-        <div className="bg-amber-50 rounded-lg p-3">
-          <p className="text-xs text-amber-700 font-medium">深夜割増（22:00〜）</p>
-          <p className="text-sm text-amber-900">{nightH.toFixed(1)}時間 / 割増率1.25倍</p>
+      </div>
+
+      {/* Night premium */}
+      <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/50 p-3 ring-1 ring-amber-100/50 animate-slide-up" style={{ animationDelay: '360ms' }}>
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md bg-amber-500/10 flex items-center justify-center">
+            <Clock className="h-3 w-3 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-[10px] text-amber-700/70 font-medium">深夜割増（22:00〜）</p>
+            <p className="text-[13px] text-amber-900 font-bold tabular-nums">{nightH.toFixed(1)}時間 / 1.25倍</p>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
