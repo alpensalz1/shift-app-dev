@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { CalendarDays, Loader2 } from 'lucide-react'
 
-/* ââ Matrix Rain Canvas ââ */
+/* ── Matrix Rain Canvas ── */
 function MatrixRain() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -26,7 +26,7 @@ function MatrixRain() {
     resize()
     window.addEventListener('resize', resize)
 
-    const chars = 'ã¢ã¤ã¦ã¨ãªã«ã­ã¯ã±ã³ãµã·ã¹ã»ã½ã¿ããããããããããããããããã ã¡ã¢ã¤ã¦ã¨ã©ãªã«ã¬ã­ã¯ã²ã³0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&*(){}[]|;:<>?/~'
+    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&*(){}[]|;:<>?/~'
     const fontSize = 14
     const columns = Math.floor(canvas.width / fontSize)
     const drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100)
@@ -75,7 +75,7 @@ function MatrixRain() {
   )
 }
 
-/* ââ Glitch Text Effect ââ */
+/* ── Glitch Text Effect ── */
 function GlitchText({ text, className = '' }: { text: string; className?: string }) {
   return (
     <span className={`relative inline-block ${className}`}>
@@ -96,7 +96,7 @@ function GlitchText({ text, className = '' }: { text: string; className?: string
   )
 }
 
-/* ââ Typing Effect Hook ââ */
+/* ── Typing Effect Hook ── */
 function useTypingEffect(text: string, speed = 50, startDelay = 500) {
   const [displayed, setDisplayed] = useState('')
   const [done, setDone] = useState(false)
@@ -123,7 +123,7 @@ function useTypingEffect(text: string, speed = 50, startDelay = 500) {
   return { displayed, done }
 }
 
-/* ââ Terminal Log Lines ââ */
+/* ── Terminal Log Lines ── */
 function TerminalLines({ lines, onDone }: { lines: string[]; onDone?: () => void }) {
   const [visibleCount, setVisibleCount] = useState(0)
 
@@ -147,7 +147,7 @@ function TerminalLines({ lines, onDone }: { lines: string[]; onDone?: () => void
   )
 }
 
-/* ââ Matrix Admin Login Panel ââ */
+/* ── Matrix Admin Login Panel ── */
 function MatrixAdminLogin({
   adminToken,
   setAdminToken,
@@ -220,7 +220,7 @@ function MatrixAdminLogin({
           100% { opacity: 0.98; }
         }
         .terminal-cursor::after {
-          content: 'â(';
+          content: '█';
           animation: blink 1s step-end infinite;
           color: #0f0;
         }
@@ -369,7 +369,7 @@ function MatrixAdminLogin({
   )
 }
 
-/* ââ Main Login Page ââ */
+/* ── Main Login Page ── */
 export default function LoginPage() {
   const router = useRouter()
   const [name, setName] = useState('')
@@ -423,7 +423,7 @@ export default function LoginPage() {
       .eq('is_active', true)
       .order('id', { ascending: true })
       .then(({ data }) => {
-        if (data) setStaffNames(data.map((s) => s.name).filter((n) => n !== 'ãã£ã'))
+        if (data) setStaffNames(data.map((s) => s.name).filter((n) => n !== 'いっさ'))
         setNamesLoading(false)
       })
   }, [])
@@ -443,7 +443,7 @@ export default function LoginPage() {
         .single()
 
       if (dbError || !data) {
-        setError('ååã¾ãã¯ãã¹ã¯ã¼ããæ­£ããããã¾ãã')
+        setError('名前またはパスワードが正しくありません')
         setLoading(false)
         return
       }
@@ -451,7 +451,7 @@ export default function LoginPage() {
       storeStaff(data)
       router.replace('/home')
     } catch {
-      setError('éä¿¡ã¨ã©ã¼ãçºçãã¾ãã')
+      setError('通信エラーが発生しました')
       setLoading(false)
     }
   }
@@ -483,20 +483,20 @@ export default function LoginPage() {
             >
               <CalendarDays className="h-8 w-8 text-zinc-900" />
             </button>
-            <CardTitle className="text-2xl">ã·ããç®¡ç</CardTitle>
-            <CardDescription>ååã¨ãã¹ã¯ã¼ãã§ã­ã°ã¤ã³</CardDescription>
+            <CardTitle className="text-2xl">タナカたなか シフト管理</CardTitle>
+            <CardDescription>名前とパスワードでログインしてください</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">åå</label>
+                <label className="block text-sm font-medium mb-2">名前</label>
                 <select
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={loading || namesLoading}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <option value="">é¸æãã¦ãã ãã</option>
+                  <option value="">選択してください</option>
                   {staffNames.map((staffName) => (
                     <option key={staffName} value={staffName}>{staffName}</option>
                   ))}
@@ -504,12 +504,12 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">ãã¹ã¯ã¼ã</label>
+                <label className="block text-sm font-medium mb-2">パスワード</label>
                 <Input
                   type="password"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder="ãã¹ã¯ã¼ããå¥å"
+                  placeholder="パスワードを入力"
                   disabled={loading}
                 />
               </div>
@@ -518,7 +518,7 @@ export default function LoginPage() {
 
               <Button type="submit" className="w-full" disabled={loading || namesLoading || !name}>
                 {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                ã­ã°ã¤ã³
+                ログイン
               </Button>
             </form>
           </CardContent>
