@@ -69,7 +69,7 @@ export function BottomNav() {
                   isActive ? 'stroke-[2.5]' : 'stroke-[1.5]'
                 )} />
                 {showBadge && (
-                  <span className="absolute -top-1 -right-2 min-w[14px] h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none shadow-sm">
+                  <span className="absolute -top-1 -right-2 min-w-[14px] h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none shadow-sm">
                     {(item.badge ?? 0) > 9 ? '9+' : item.badge}
                   </span>
                 )}
