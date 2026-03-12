@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
 import { formatTime, getSubmissionPeriod, calcWage } from '@/lib/utils'
+import { analyzeAllStaffPatterns, StaffPattern } from '@/lib/pattern-analysis'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -97,6 +98,7 @@ function ShiftConfirmTab() {
   const [requests, setRequests] = useState<RequestWithStaff[]>([])
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
+  const [patterns, setPatterns] = useState<Map<number, StaffPattern>>(new Map())
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [confirming, setConfirming] = useState(false)
@@ -667,13 +669,23 @@ function AutoGenerateTab() {
     if (offRes.data) setOffRequests(offRes.data as OffRequest[])
     if (staffsRes.data) setAllStaffs(staffsRes.data)
     if (configRes.data) setConfigs(configRes.data)
+    if (staffsRes.data) {
+      const staffIds = staffsRes.data.map((s: Staff) => s.id)
+      analyzeAllStaffPatterns(staffIds).then(p => setPatterns(p))
+    }
     setLoading(false)
   }, [period.start.toISOString(), period.end.toISOString()])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   // デフォルト時間を取得
-  const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
+  const getPatternTime = (staffId: number, type: '仕込み' | '営業'): { start: string; end: string } | null => {
+      const p = patterns.get(staffId)
+      if (!p || p.totalShifts < 4) return null
+      return { start: p.preferredStartTime + ':00', end: p.preferredEndTime + ':00' }
+    }
+
+    const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
     const cfg = configs.find((c) => c.shop_id === shopId && c.type === type)
     if (cfg) return { start: cfg.default_start_time, end: cfg.default_end_time }
     return type === '仕込み' ? { start: '09:00:00', end: '17:00:00' } : { start: '17:00:00', end: '24:00:00' }
@@ -732,7 +744,7 @@ function AutoGenerateTab() {
         for (const rule of prepOnlyBeforeFull) {
           const staff = staffMap[rule.staff_id]
           if (!staff) continue
-          const t = getDefaultTime(shopId, '仕込み')
+          const t = getPatternTime(rule.staff_id, '仕込み') || getDefaultTime(shopId, '仕込み')
           rows.push({
             date: dateStr,
             shop_id: shopId,
@@ -750,8 +762,8 @@ function AutoGenerateTab() {
         if (fullDayStaff) {
           const staff = staffMap[fullDayStaff.staff_id]
           if (staff) {
-            const t1 = getDefaultTime(shopId, '仕込み')
-            const t2 = getDefaultTime(shopId, '営業')
+            const t1 = getPatternTime(fullDayStaff.staff_id, '仕込み') || getDefaultTime(shopId, '仕込み')
+            const t2 = getPatternTime(fullDayStaff.staff_id, '営業') || getDefaultTime(shopId, '営業')
             rows.push({
               date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
               staff_id: staff.id, staff_name: staff.name,
