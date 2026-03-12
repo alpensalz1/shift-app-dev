@@ -62,6 +62,36 @@ const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
 // =============================================
 // タブ1: シフト確定（既存機能）
 // =============================================
+
+// バリデーション: 店舗別の仕込み/営業時間境界チェック
+function validateShiftTime(
+  configs: ShiftConfig[],
+  shopId: number,
+  type: '仕込み' | '営業',
+  startTime: string,
+  endTime: string
+): { valid: boolean; message: string } {
+  const cfg = configs.find(c => c.shop_id === shopId && c.type === type)
+  if (!cfg) return { valid: true, message: '' }
+  
+  const cfgStart = cfg.default_start_time.substring(0, 5)
+  const cfgEnd = cfg.default_end_time.substring(0, 5)
+  const st = startTime.substring(0, 5)
+  const et = (endTime || '24:00').substring(0, 5)
+  
+  if (type === '仕込み') {
+    if (et > cfgEnd) {
+      return { valid: false, message: `仕込みの終了時間(${et})が店舗の上限(${cfgEnd})を超えています` }
+    }
+  }
+  if (type === '営業') {
+    if (st < cfgStart) {
+      return { valid: false, message: `営業の開始時間(${st})が店舗の下限(${cfgStart})より前です` }
+    }
+  }
+  return { valid: true, message: '' }
+}
+
 function ShiftConfirmTab() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [requests, setRequests] = useState<RequestWithStaff[]>([])
@@ -164,6 +194,13 @@ function ShiftConfirmTab() {
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
     setConfirming(true)
     setMessage('')
+    // 店舗別時間境界バリデーション
+    const vResult = validateShiftTime(configs, shopId, type, req.start_time, req.end_time)
+    if (!vResult.valid) {
+      setMessage(vResult.message)
+      setConfirming(false)
+      return
+    }
     const { error } = await supabase.from('shifts_fixed').upsert({
       date: req.date, shop_id: shopId, type,
       staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time,
@@ -184,6 +221,14 @@ function ShiftConfirmTab() {
   const handleConfirmBoth = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
     setMessage('')
+    // 仕込み・営業両方の時間境界バリデーション
+    const vShikomi = validateShiftTime(configs, shopId, '仕込み', req.start_time, req.end_time)
+    const vEigyo = validateShiftTime(configs, shopId, '営業', req.start_time, req.end_time)
+    if (!vShikomi.valid || !vEigyo.valid) {
+      setMessage(vShikomi.message || vEigyo.message)
+      setConfirming(false)
+      return
+    }
     const [r1, r2] = await Promise.all([
       supabase.from('shifts_fixed').upsert(
         { date: req.date, shop_id: shopId, type: '仕込み', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time },
@@ -730,7 +775,15 @@ function AutoGenerateTab() {
     if (!preview || preview.length === 0) return
     setSaving(true)
     setMessage('')
-    const upsertRows = preview.map((r) => ({
+    // 自動生成時の店舗別時間境界バリデーション
+    const validPreview = preview.filter(r => {
+      const v = validateShiftTime(configs, r.shop_id, r.type, r.start_time, r.end_time)
+      return v.valid
+    })
+    if (validPreview.length < preview.length) {
+      setMessage(`時間境界違反の${preview.length - validPreview.length}件を除外しました`)
+    }
+    const upsertRows = validPreview.map((r) => ({
       date: r.date, shop_id: r.shop_id, type: r.type,
       staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
     }))
