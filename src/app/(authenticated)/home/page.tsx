@@ -11,31 +11,43 @@ import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
 const SHOPS = [
-  { id: 1, name: '三㻒茶屋' },
+  { id: 1, name: '三軒茶屋' },
   { id: 2, name: '下北沢' },
 ]
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
-const COLORS: Record<number, { card: string; icon: string; badge: string }> = {
-  1: { card: 'border-l-4 border-l-amber-400 bg-amber-50/30', icon: 'text-amber-600', badge: 'bg-amber-100 text-amber-800' },
-  2: { card: 'border-l-4 border-l-violet-400 bg-violet-50/30', icon: 'text-violet-600', badge: 'bg-violet-100 text-violet-800' },
+const COLORS: Record<number, { card: string; border: string; icon: string; badge: string; highlight: string }> = {
+  1: {
+    card: 'bg-gradient-to-br from-amber-50/80 to-orange-50/40',
+    border: 'border-l-[3px] border-l-amber-400',
+    icon: 'text-amber-600',
+    badge: 'bg-amber-100/80 text-amber-700',
+    highlight: 'bg-amber-500',
+  },
+  2: {
+    card: 'bg-gradient-to-br from-violet-50/80 to-purple-50/40',
+    border: 'border-l-[3px] border-l-violet-400',
+    icon: 'text-violet-600',
+    badge: 'bg-violet-100/80 text-violet-700',
+    highlight: 'bg-violet-500',
+  },
 }
 
 const TYPE_STYLES: Record<string, string> = {
-  '仕込み': 'bg-orange-100 text-orange-700',
-  '営業': 'bg-emerald-100 text-emerald-700',
+  '仕込み': 'bg-orange-100/80 text-orange-700 ring-1 ring-orange-200/50',
+  '営業': 'bg-emerald-100/80 text-emerald-700 ring-1 ring-emerald-200/50',
 }
 
-function ShopCard({ shopName, shifts, style, currentStaffId }: {
+function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
   shopName: string
   shifts: ShiftFixedWithStaff[]
-  style: { card: string; icon: string; badge: string }
+  style: typeof COLORS[1]
   currentStaffId: number | null
+  index: number
 }) {
   const staffCount = useMemo(() => new Set(shifts.map(s => s.staff_id)).size, [shifts])
 
-  // Group by staff, sort: 社員 first, then by start_time
   const byStaff = useMemo(() => {
     const map = new Map<number, ShiftFixedWithStaff[]>()
     for (const s of shifts) {
@@ -55,18 +67,24 @@ function ShopCard({ shopName, shifts, style, currentStaffId }: {
   if (shifts.length === 0) return null
 
   return (
-    <Card className={style.card}>
-      <CardHeader className="pb-2 pt-3 px-3">
-        <CardTitle className="text-sm flex items-center gap-1.5">
+    <div
+      className={`rounded-xl overflow-hidden ${style.border} ${style.card} animate-slide-up`}
+      style={{ animationDelay: `${index * 80}ms` }}
+    >
+      {/* Shop header */}
+      <div className="flex items-center justify-between px-3 pt-3 pb-2">
+        <div className="flex items-center gap-1.5">
           <MapPin className={`h-3.5 w-3.5 ${style.icon}`} />
-          {shopName}
-          <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-normal ${style.badge}`}>
-            <Users className="inline h-3 w-3 mr-0.5" />{staffCount}名
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-3 pb-3 space-y-0">
-        {byStaff.map((staffShifts) => {
+          <span className="text-sm font-bold">{shopName}</span>
+        </div>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${style.badge}`}>
+          {staffCount}名
+        </span>
+      </div>
+
+      {/* Staff list */}
+      <div className="px-3 pb-2">
+        {byStaff.map((staffShifts, i) => {
           const staff = staffShifts[0].staff
           const isShanin = staff?.employment_type === '社員'
           const isYakuin = staff?.employment_type === '役員'
@@ -74,40 +92,42 @@ function ShopCard({ shopName, shifts, style, currentStaffId }: {
           return (
             <div
               key={staffShifts[0].staff_id}
-              className={`flex items-center justify-between py-2 border-b border-border/30 last:border-0 -mx-1 px-2 rounded-md transition-colors ${
-                isMe ? 'bg-blue-50/80 ring-1 ring-blue-200/60' : ''
-              }`}
+              className={`flex items-center justify-between py-2 ${
+                i < byStaff.length - 1 ? 'border-b border-black/[0.04]' : ''
+              } ${isMe ? '-mx-2 px-2 rounded-lg bg-blue-50/80 ring-1 ring-blue-200/40' : ''}`}
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 {isMe && (
-                  <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="relative flex h-1.5 w-1.5 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
                   </span>
                 )}
-                <span className={`text-sm font-medium truncate ${isMe ? 'text-blue-700' : ''}`}>{staff?.name}</span>
+                <span className={`text-[13px] font-medium truncate ${isMe ? 'text-blue-700' : ''}`}>
+                  {staff?.name}
+                </span>
                 {isMe && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-semibold shrink-0">
-                    あなた
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-blue-500 text-white font-bold shrink-0 uppercase tracking-wider">
+                    You
                   </span>
                 )}
                 {isShanin && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 shrink-0">社員</span>
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-zinc-200/60 text-zinc-500 shrink-0">社員</span>
                 )}
                 {isYakuin && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">役員</span>
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-amber-200/60 text-amber-700 shrink-0">役員</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 ml-2">
                 {staffShifts.map(s => (
                   <div key={s.id} className="flex items-center gap-1">
                     {s.type && (
-                      <span className={`text-[9px] px-1 py-0.5 rounded ${TYPE_STYLES[s.type] || 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium ${TYPE_STYLES[s.type] || 'bg-gray-100 text-gray-600'}`}>
                         {s.type}
                       </span>
                     )}
-                    <span className={`text-xs tabular-nums ${isMe ? 'text-blue-600 font-medium' : 'text-muted-foreground'}`}>
-                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                    <span className={`text-[11px] tabular-nums ${isMe ? 'text-blue-600 font-semibold' : 'text-muted-foreground'}`}>
+                      {formatTime(s.start_time)}-{formatTime(s.end_time)}
                     </span>
                   </div>
                 ))}
@@ -115,8 +135,8 @@ function ShopCard({ shopName, shifts, style, currentStaffId }: {
             </div>
           )
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -157,7 +177,6 @@ export default function HomePage() {
     fetchShifts()
   }, [selectedDate])
 
-  // Filter shifts for selected day only
   const dayShifts = useMemo(() => {
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
     return shifts.filter(s => s.date === dateStr)
@@ -180,84 +199,104 @@ export default function HomePage() {
   }, [])
 
   const isToday = isSameDay(selectedDate, today)
+  const totalStaff = new Set(dayShifts.map(s => s.staff_id)).size
 
   return (
-    <div className="px-4 pt-3 pb-24 max-w-lg mx-auto space-y-3">
+    <div className="px-4 pt-3 pb-24 space-y-3">
       {/* Week navigation */}
       <div className="flex items-center justify-between">
-        <button onClick={handlePrevWeek} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
-          <ChevronLeft className="h-4 w-4" />
+        <button onClick={handlePrevWeek} className="p-2 -ml-2 hover:bg-muted rounded-xl transition-colors press-effect">
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
         </button>
-        <p className="text-xs font-medium text-muted-foreground">
-          {format(weekStart, 'M月d日', { locale: ja })} 〜 {format(addDays(weekStart, 6), 'M月d日', { locale: ja })}
+        <p className="text-xs font-semibold text-muted-foreground tracking-wide">
+          {format(weekStart, 'M月d日', { locale: ja })} - {format(addDays(weekStart, 6), 'M月d日', { locale: ja })}
         </p>
-        <button onClick={handleNextWeek} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
-          <ChevronRight className="h-4 w-4" />
+        <button onClick={handleNextWeek} className="p-2 -mr-2 hover:bg-muted rounded-xl transition-colors press-effect">
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
 
-      {/* Day selector tabs */}
-      <div className="grid grid-cols-7 gap-1 bg-muted/50 rounded-xl p-1">
+      {/* Day selector - improved */}
+      <div className="grid grid-cols-7 gap-1 bg-muted/40 rounded-2xl p-1.5">
         {weekDays.map((day, i) => {
           const isSelected = isSameDay(day, selectedDate)
           const isDayToday = isSameDay(day, today)
           const dayHasShifts = shifts.some(s => s.date === format(day, 'yyyy-MM-dd'))
+          const isSunday = i === 0
+          const isSaturday = i === 6
           return (
             <button
               key={i}
               onClick={() => setSelectedDate(day)}
-              className={`flex flex-col items-center py-1.5 rounded-lg transition-all text-center ${
+              className={`flex flex-col items-center py-2 rounded-xl transition-all press-effect relative ${
                 isSelected
                   ? isDayToday
-                    ? 'bg-blue-500 text-white shadow-sm'
+                    ? 'bg-blue-500 text-white shadow-md shadow-blue-500/25'
                     : 'bg-white text-foreground shadow-sm'
                   : isDayToday
-                    ? 'text-blue-600 font-semibold'
+                    ? 'text-blue-600'
                     : 'text-muted-foreground hover:bg-white/60'
               }`}
             >
-              <span className={`text-[10px] leading-none ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : ''} ${isSelected ? 'text-inherit' : ''}`}>
+              <span className={`text-[9px] leading-none font-medium ${
+                isSelected ? 'text-current opacity-70' :
+                isSunday ? 'text-red-400' : isSaturday ? 'text-blue-400' : ''
+              }`}>
                 {DAY_LABELS[i]}
               </span>
-              <span className={`text-sm font-semibold leading-tight mt-0.5 ${isSelected ? '' : ''}`}>
+              <span className={`text-[15px] font-bold leading-tight mt-0.5 ${
+                isDayToday && !isSelected ? 'text-blue-600' : ''
+              }`}>
                 {format(day, 'd')}
               </span>
               {dayHasShifts && !isSelected && (
-                <span className="w-1 h-1 rounded-full bg-current opacity-40 mt-0.5" />
+                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-current opacity-30" />
+              )}
+              {isSelected && dayHasShifts && (
+                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-current opacity-60" />
               )}
             </button>
           )
         })}
       </div>
 
-      {/* Selected date header */}
-      <div className="flex items-center gap-2">
-        <h2 className="text-base font-bold">
-          {format(selectedDate, 'M月d日（E）', { locale: ja })}
+      {/* Date header */}
+      <div className="flex items-baseline gap-2 pt-1">
+        <h2 className="text-lg font-bold tracking-tight">
+          {format(selectedDate, 'M月d日', { locale: ja })}
+          <span className="text-muted-foreground font-medium ml-0.5">
+            {format(selectedDate, '(E)', { locale: ja })}
+          </span>
         </h2>
         {isToday && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500 text-white font-semibold">
-            今日
+          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-blue-500 text-white font-bold tracking-wide">
+            TODAY
           </span>
         )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {dayShifts.length > 0 ? `${new Set(dayShifts.map(s => s.staff_id)).size}名出勤` : ''}
-        </span>
+        {totalStaff > 0 && (
+          <span className="ml-auto text-[11px] text-muted-foreground font-medium tabular-nums">
+            {totalStaff}名出勤
+          </span>
+        )}
       </div>
 
-      {/* Shift cards */}
+      {/* Content */}
       {loading ? (
-        <div className="text-center py-8">
-          <p className="text-sm text-muted-foreground">読み込み中...</p>
+        <div className="space-y-3 pt-2">
+          <div className="skeleton h-32 w-full" />
+          <div className="skeleton h-28 w-full" />
         </div>
       ) : dayShifts.length === 0 ? (
-        <div className="text-center py-12">
-          <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-          <p className="text-sm text-muted-foreground">この日のシフトはありません</p>
+        <div className="flex flex-col items-center py-16 animate-fade-in">
+          <div className="w-14 h-14 rounded-2xl bg-muted/60 flex items-center justify-center mb-3">
+            <AlertCircle className="h-6 w-6 text-muted-foreground/40" />
+          </div>
+          <p className="text-sm text-muted-foreground font-medium">シフトなし</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">この日のシフトは登録されていません</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {SHOPS.map(shop => (
+          {SHOPS.map((shop, i) => (
             shiftsByShop[shop.id].length > 0 && (
               <ShopCard
                 key={shop.id}
@@ -265,6 +304,7 @@ export default function HomePage() {
                 shifts={shiftsByShop[shop.id]}
                 style={COLORS[shop.id]}
                 currentStaffId={currentStaffId}
+                index={i}
               />
             )
           ))}
