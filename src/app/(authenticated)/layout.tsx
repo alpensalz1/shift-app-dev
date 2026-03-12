@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getStoredStaff, clearStaff } from '@/lib/auth'
 import { BottomNav } from '@/components/bottom-nav'
 import { Staff } from '@/types/database'
-import { LogOut, Building2 } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 
 export default function AuthenticatedLayout({
   children,
@@ -49,7 +49,7 @@ export default function AuthenticatedLayout({
 
   return (
     <div className="min-h-screen pb-20" style={{ '--theme-color': themeColor } as React.CSSProperties}>
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center justify-between h-12 px-4 max-w-lg mx-auto">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-bold tracking-tight">タナカたなか</h1>
@@ -68,7 +68,8 @@ export default function AuthenticatedLayout({
             </button>
           </div>
         </div>
-      </header>
+        <div className="h-[2px] w-full" style={{ background: themeColor }} />
+</header>
       <main className="max-w-lg mx-auto">
         {children}
       </main>
