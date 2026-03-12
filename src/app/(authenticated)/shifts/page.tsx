@@ -1,774 +1,510 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftRequest, ShiftFixed, OffRequest, Staff } from '@/types/database'
-import { getSubmissionPeriod, generateTimeSlots, formatTime, isValid15MinTime } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Staff, ShiftRequest, ShiftConfig } from '@/types/database'
+import { formatTime } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
-  format,
-  eachDayOfInterval,
-  isSameDay,
-  isWithinInterval,
-  startOfMonth,
-  endOfMonth,
-  getDay,
-  addMonths,
-  subMonths,
+  format, addDays, startOfWeek, addWeeks, eachDayOfInterval, getDay
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, Trash2, History, XCircle } from 'lucide-react'
+import {
+  CheckCircle2, XCircle, ChevronLeft, ChevronRight,
+  Send, Users, CalendarDays, Loader2
+} from 'lucide-react'
 
-const TIME_SLOTS = generateTimeSlots(9, 24)
-const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
-
-type ViewMode = 'submit' | 'history'
-type OffType = '出勤' | '休み' | '仕込みのみ' | '営業のみ'
+const SHOPS = [
+  { id: 1, name: 'ä¸è»è¶å±' },
+  { id: 2, name: 'ä¸åæ²¢' },
+]
 
 // =============================================
-// 社員向け: 休み希望UI
+// æåºç¶æ³ãµããªã¼ã³ã³ãã¼ãã³ãï¼ç¤¾å¡ã»å½¹å¡ç¨ï¼
 // =============================================
-function EmployeeSubmitView() {
-  const staff = getStoredStaff()
-  const today = new Date()
-  const period = getSubmissionPeriod(today)
+function SubmissionOverview({ targetWeekStart, allStaffs }: {
+  targetWeekStart: Date
+  allStaffs: Staff[]
+}) {
+  const [requestsByStaff, setRequestsByStaff] = useState<Record<number, ShiftRequest[]>>({})
+  const [loading, setLoading] = useState(true)
 
-  // dateStr -> OffType のマップ
-  const [offMap, setOffMap] = useState<Record<string, OffType>>({})
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
-
-  const calendarMonth = startOfMonth(period.start)
-  const calendarDays = useMemo(
-    () => eachDayOfInterval({ start: startOfMonth(period.start), end: endOfMonth(period.start) }),
-    [period.start.toISOString()]
-  )
-  const firstDayOfWeek = getDay(calendarMonth)
-
-  const isInPeriod = useCallback(
-    (date: Date) => isWithinInterval(date, { start: period.start, end: period.end }),
-    [period.start.toISOString(), period.end.toISOString()]
-  )
-
-  // 既存の休み希望を取得
-  const fetchExisting = useCallback(async () => {
-    if (!staff) return
-    const { data } = await supabase
-      .from('off_requests')
-      .select('*')
-      .eq('staff_id', staff.id)
-      .gte('date', format(period.start, 'yyyy-MM-dd'))
-      .lte('date', format(period.end, 'yyyy-MM-dd'))
-    if (data) {
-      const map: Record<string, OffType> = {}
-      ;(data as OffRequest[]).forEach((r) => {
-        map[r.date] = r.type as OffType
-      })
-      setOffMap(map)
-    }
-  }, [staff?.id, period.start.toISOString(), period.end.toISOString()])
+  const weekEnd = addDays(targetWeekStart, 6)
+  const startStr = format(targetWeekStart, 'yyyy-MM-dd')
+  const endStr = format(weekEnd, 'yyyy-MM-dd')
 
   useEffect(() => {
-    fetchExisting()
-  }, [fetchExisting])
+    const fetch = async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from('shift_requests')
+        .select('*')
+        .gte('date', startStr)
+        .lte('date', endStr)
 
-  // 日付タップ: 出勤 → 休み → 仕込みのみ → 営業のみ → 出勤
-  const toggleDate = (date: Date) => {
-    if (!isInPeriod(date)) return
-    const key = format(date, 'yyyy-MM-dd')
-    setOffMap((prev) => {
-      const cur = prev[key] ?? '出勤'
-      const next: OffType = cur === '出勤' ? '休み' : cur === '休み' ? '仕込みのみ' : cur === '仕込みのみ' ? '営業のみ' : '出勤'
-      const updated = { ...prev }
-      if (next === '出勤') {
-        delete updated[key]
-      } else {
-        updated[key] = next
+      const grouped: Record<number, ShiftRequest[]> = {}
+      for (const r of (data || [])) {
+        if (!grouped[r.staff_id]) grouped[r.staff_id] = []
+        grouped[r.staff_id].push(r)
       }
-      return updated
-    })
-  }
-
-  const offCount = Object.values(offMap).filter((v) => v === '休み').length
-  const prepOnlyCount = Object.values(offMap).filter((v) => v === '仕込みのみ').length
-  const salesOnlyCount = Object.values(offMap).filter((v) => v === '営業のみ').length
-  const totalCount = offCount + prepOnlyCount + salesOnlyCount
-
-  const handleSave = async () => {
-    if (!staff) return
-    setSaving(true)
-    setMessage('')
-
-    // 期間内の全日付を列挙
-    const allDates = eachDayOfInterval({ start: period.start, end: period.end })
-
-    // off_requests upsert (休み or 仕込みのみ のもの)
-    const upsertRows = allDates
-      .filter((d) => {
-        const key = format(d, 'yyyy-MM-dd')
-        return offMap[key] && offMap[key] !== '出勤'
-      })
-      .map((d) => {
-        const key = format(d, 'yyyy-MM-dd')
-        return {
-          staff_id: staff.id,
-          date: key,
-          type: offMap[key],
-          updated_at: new Date().toISOString(),
-        }
-      })
-
-    // 出勤に戻した日は削除
-    const deleteDates = allDates
-      .filter((d) => {
-        const key = format(d, 'yyyy-MM-dd')
-        return !offMap[key] || offMap[key] === '出勤'
-      })
-      .map((d) => format(d, 'yyyy-MM-dd'))
-
-    let hasError = false
-
-    if (upsertRows.length > 0) {
-      const { error } = await supabase
-        .from('off_requests')
-        .upsert(upsertRows, { onConflict: 'staff_id,date' })
-      if (error) hasError = true
+      setRequestsByStaff(grouped)
+      setLoading(false)
     }
+    fetch()
+  }, [startStr, endStr])
 
-    if (deleteDates.length > 0 && !hasError) {
-      const { error } = await supabase
-        .from('off_requests')
-        .delete()
-        .eq('staff_id', staff.id)
-        .in('date', deleteDates)
-      if (error) hasError = true
-    }
+  const activeStaffs = allStaffs.filter(s => s.is_active && !s.deleted_at)
+  const submitted = activeStaffs.filter(s => (requestsByStaff[s.id]?.length || 0) > 0)
+  const notSubmitted = activeStaffs.filter(s => !requestsByStaff[s.id] || requestsByStaff[s.id].length === 0)
 
-    // shift_requests upsert: 出勤・仕込みのみ・営業のみ の日はシフト希望として登録
-    const shiftRows = allDates
-      .filter((d) => {
-        const key = format(d, 'yyyy-MM-dd')
-        const t = offMap[key] ?? '出勤'
-        return t !== '休み'
-      })
-      .map((d) => {
-        const key = format(d, 'yyyy-MM-dd')
-        const t = offMap[key] ?? '出勤'
-        const type = t === '仕込みのみ' ? '仕込み' : t === '営業のみ' ? '営業' : '仕込み・営業'
-        const st = t === '営業のみ' ? '17:00:00' : '14:00:00'
-        const et = t === '仕込みのみ' ? '17:00:00' : '24:00:00'
-        return { staff_id: staff!.id, date: key, type, start_time: st, end_time: et, status: 'pending' as const }
-      })
-
-    if (shiftRows.length > 0) {
-      const { error: srErr } = await supabase
-        .from('shift_requests')
-        .upsert(shiftRows, { onConflict: 'staff_id,date' })
-      if (srErr) { setSaving(false); setMessage('保存に失敗しました'); return }
-    }
-
-    // shift_requests delete: 休みの日は削除
-    const offDates = allDates
-      .filter((d) => (offMap[format(d, 'yyyy-MM-dd')] ?? '出勤') === '休み')
-      .map((d) => format(d, 'yyyy-MM-dd'))
-
-    if (offDates.length > 0) {
-      const { error: sdErr } = await supabase
-        .from('shift_requests')
-        .delete()
-        .eq('staff_id', staff!.id)
-        .in('date', offDates)
-      if (sdErr) { setSaving(false); setMessage('保存に失敗しました'); return }
-    }
-
-    setSaving(false)
-    if (hasError) {
-      setMessage('保存に失敗しました')
-    } else {
-      setMessage('保存しました')
-      fetchExisting()
-    }
-  }
-
-  const periodLabel = `${format(period.start, 'M/d')}〜${format(period.end, 'M/d')}`
+  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
 
   return (
-    <>
-      <div>
-        <p className="text-sm text-muted-foreground">
-          対象期間: <span className="font-medium text-foreground">{periodLabel}</span>
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          締め切り: <span className="font-medium text-foreground">{format(period.deadline, 'M/d')}</span>
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          タップで 出勤 → 休み → 仕込みのみ → 営業のみ と切り替わります
-        </p>
+    <div className="space-y-3">
+      {/* ãµããªã¼ãã¼ */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 bg-muted/50 rounded-full h-3 overflow-hidden">
+          <div
+            className="h-full bg-emerald-500 rounded-full transition-all"
+            style={{ width: `${activeStaffs.length > 0 ? (submitted.length / activeStaffs.length * 100) : 0}%` }}
+          />
+        </div>
+        <span className="text-sm font-medium tabular-nums">
+          {submitted.length}/{activeStaffs.length}
+        </span>
       </div>
 
-      {/* カレンダー */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-center">
-            {format(calendarMonth, 'yyyy年M月', { locale: ja })}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-2">
-          <div className="grid grid-cols-7 mb-1">
-            {DAY_NAMES.map((d, i) => (
-              <div key={d} className={`text-center text-xs font-medium py-1 ${
-                i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-muted-foreground'
-              }`}>{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-0.5">
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-            {calendarDays.map((date) => {
-              const inPeriod = isInPeriod(date)
-              const key = format(date, 'yyyy-MM-dd')
-              const offType = offMap[key] ?? '出勤'
-              const dayOfWeek = getDay(date)
-
-              let bgClass = ''
-              let textClass = ''
-              let label = ''
-
-              if (offType === '休み') {
-                bgClass = 'bg-red-100 ring-1 ring-red-300'
-                textClass = 'text-red-700'
-                label = '休み'
-              } else if (offType === '仕込みのみ') {
-                bgClass = 'bg-amber-100 ring-1 ring-amber-300'
-                textClass = 'text-amber-700'
-                label = '仕込'
-              } else if (offType === '営業のみ') {
-                bgClass = 'bg-blue-100 ring-1 ring-blue-300'
-                textClass = 'text-blue-700'
-                label = '営業'
-              }
-
-              return (
-                <button
-                  key={date.toISOString()}
-                  onClick={() => toggleDate(date)}
-                  disabled={!inPeriod}
-                  className={`
-                    relative flex flex-col items-center justify-center rounded-lg py-1.5 min-h-[52px] text-sm transition-all
-                    ${!inPeriod ? 'text-muted-foreground/40 cursor-not-allowed' : 'cursor-pointer hover:bg-accent'}
-                    ${bgClass}
-                    ${!bgClass && dayOfWeek === 0 && inPeriod ? 'text-red-500' : ''}
-                    ${!bgClass && dayOfWeek === 6 && inPeriod ? 'text-blue-500' : ''}
-                  `}
-                >
-                  <span className={`font-medium ${textClass}`}>{format(date, 'd')}</span>
-                  {label && (
-                    <span className={`text-[9px] leading-tight mt-0.5 font-medium ${textClass}`}>{label}</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 集計と保存 */}
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">休み</span>
-            <span className="font-medium">{offCount}日</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">仕込みのみ</span>
-            <span className="font-medium">{prepOnlyCount}日</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">営業のみ</span>
-            <span className="font-medium">{salesOnlyCount}日</span>
-          </div>
-          <div className="flex items-center justify-between text-sm border-t pt-2">
-            <span className="font-medium">合計オフ</span>
-            <span className={`font-bold text-base ${totalCount >= 5 && totalCount <= 6 ? 'text-emerald-600' : 'text-foreground'}`}>
-              {totalCount}日
-              <span className="text-xs font-normal text-muted-foreground ml-1">（目安 5〜6日）</span>
-            </span>
-          </div>
-          <Button onClick={handleSave} className="w-full h-11" disabled={saving}>
-            {saving ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
-            ) : (
-              '休み希望を保存する'
-            )}
-          </Button>
-          {message && (
-            <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>
-              {message}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </>
-  )
-}
-
-// =============================================
-// アルバイト向け: シフト希望提出UI（既存ロジック）
-// =============================================
-function PartTimeSubmitView() {
-  const staff = getStoredStaff()
-  const today = new Date()
-  const period = getSubmissionPeriod(today)
-
-  const [selectedDates, setSelectedDates] = useState<Date[]>([])
-  const [shiftType, setShiftType] = useState<'仕込み・営業' | '仕込み' | '営業'>('仕込み・営業')
-  const [startTime, setStartTime] = useState('14:00')
-  const [endTime, setEndTime] = useState('24:00')
-  const [note, setNote] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [existing, setExisting] = useState<ShiftRequest[]>([])
-  const [message, setMessage] = useState('')
-
-  const calendarMonth = startOfMonth(period.start)
-  const calendarDays = useMemo(
-    () => eachDayOfInterval({ start: startOfMonth(period.start), end: endOfMonth(period.start) }),
-    [period.start.toISOString()]
-  )
-  const firstDayOfWeek = getDay(calendarMonth)
-
-  const isInPeriod = useCallback(
-    (date: Date) => isWithinInterval(date, { start: period.start, end: period.end }),
-    [period.start.toISOString(), period.end.toISOString()]
-  )
-
-  const fetchExisting = useCallback(async () => {
-    if (!staff) return
-    const { data } = await supabase
-      .from('shift_requests')
-      .select('*')
-      .eq('staff_id', staff.id)
-      .gte('date', format(period.start, 'yyyy-MM-dd'))
-      .lte('date', format(period.end, 'yyyy-MM-dd'))
-      .order('date', { ascending: true })
-    if (data) setExisting(data)
-  }, [staff?.id, period.start.toISOString(), period.end.toISOString()])
-
-  useEffect(() => { fetchExisting() }, [fetchExisting])
-
-  const toggleDate = (date: Date) => {
-    if (!isInPeriod(date)) return
-    setSelectedDates((prev) => {
-      const found = prev.find((d) => isSameDay(d, date))
-      if (found) return prev.filter((d) => !isSameDay(d, date))
-      return [...prev, date]
-    })
-  }
-
-  const isSelected = (date: Date) => selectedDates.some((d) => isSameDay(d, date))
-  const getExistingForDate = (date: Date) => existing.find((r) => r.date === format(date, 'yyyy-MM-dd'))
-
-  const handleSubmit = async () => {
-    if (!staff || selectedDates.length === 0) return
-    if (!isValid15MinTime(startTime) || !isValid15MinTime(endTime)) {
-      setMessage('時間は15分刻みで指定してください')
-      return
-    }
-    const [sh, sm] = startTime.split(':').map(Number)
-    const [eh, em] = endTime.split(':').map(Number)
-    if (eh * 60 + em <= sh * 60 + sm) {
-      setMessage('終了時間は開始時間より後にしてください')
-      return
-    }
-    setSubmitting(true)
-    setMessage('')
-    const rows = selectedDates.map((date) => ({
-      staff_id: staff.id,
-      date: format(date, 'yyyy-MM-dd'),
-      type: shiftType,
-      start_time: startTime.padStart(5, '0') + ':00',
-      end_time: endTime.padStart(5, '0') + ':00',
-      note,
-      status: 'pending' as const,
-    }))
-    const { error } = await supabase.from('shift_requests').upsert(rows, { onConflict: 'staff_id,date' })
-    if (error) {
-      setMessage('提出に失敗しました: ' + error.message)
-    } else {
-      setMessage(`${selectedDates.length}日分のシフト希望を提出しました`)
-      setSelectedDates([])
-      setNote('')
-      fetchExisting()
-    }
-    setSubmitting(false)
-  }
-
-  const handleDelete = async (id: number) => {
-    await supabase.from('shift_requests').delete().eq('id', id)
-    fetchExisting()
-  }
-
-  const periodLabel = `${format(period.start, 'M/d')}〜${format(period.end, 'M/d')}`
-
-  return (
-    <>
-      <div>
-        <p className="text-sm text-muted-foreground">
-          期間: <span className="font-medium text-foreground">{periodLabel}</span>
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          締め切り: <span className="font-medium text-foreground">{format(period.deadline, 'M/d')}</span>
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-center">
-            {format(calendarMonth, 'yyyy年M月', { locale: ja })}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-2">
-          <div className="grid grid-cols-7 mb-1">
-            {DAY_NAMES.map((d, i) => (
-              <div key={d} className={`text-center text-xs font-medium py-1 ${
-                i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-muted-foreground'
-              }`}>{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-0.5">
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-            {calendarDays.map((date) => {
-              const inPeriod = isInPeriod(date)
-              const selected = isSelected(date)
-              const existingReq = getExistingForDate(date)
-              const dayOfWeek = getDay(date)
-              return (
-                <button
-                  key={date.toISOString()}
-                  onClick={() => toggleDate(date)}
-                  disabled={!inPeriod}
-                  className={`
-                    relative flex flex-col items-center justify-center rounded-lg py-1.5 min-h-[52px] text-sm transition-all
-                    ${!inPeriod ? 'text-muted-foreground/40 cursor-not-allowed' : 'cursor-pointer hover:bg-accent'}
-                    ${selected ? 'bg-zinc-900 text-white hover:bg-zinc-800' : ''}
-                    ${existingReq && !selected ? (existingReq.status === 'rejected' ? 'bg-red-50 ring-1 ring-red-200' : 'bg-emerald-50 ring-1 ring-emerald-200') : ''}
-                    ${dayOfWeek === 0 && inPeriod && !selected ? 'text-red-500' : ''}
-                    ${dayOfWeek === 6 && inPeriod && !selected ? 'text-blue-500' : ''}
-                  `}
-                >
-                  <span className="font-medium">{format(date, 'd')}</span>
-                  {existingReq && (
-                    <span className={`text-[8px] leading-tight mt-0.5 ${existingReq.status === 'rejected' ? 'text-red-500' : 'text-emerald-600'}`}>
-                      {formatTime(existingReq.start_time)}
-                    </span>
-                  )}
-                  {selected && <Check className="absolute top-0.5 right-0.5 h-3 w-3" />}
-                </button>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {selectedDates.length > 0 && (
-        <Card>
-          <CardContent className="pt-4 space-y-4">
-            <p className="text-sm font-medium">{selectedDates.length}日選択中</p>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">種別</label>
-              <div className="flex gap-2">
-                {(['仕込み・営業', '仕込み', '営業'] as const).map((t) => (
-                  <button key={t} onClick={() => { setShiftType(t); if (t === '仕込み・営業') { setStartTime('14:00'); setEndTime('24:00'); } else if (t === '仕込み') { setStartTime('14:00'); setEndTime('17:00'); } else { setStartTime('17:00'); setEndTime('24:00'); } }}
-                    className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                      shiftType === t ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                    }`}>{t}</button>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">開始</label>
-                <select value={startTime} onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                  {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">終了</label>
-                <select value={endTime} onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
-                  {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">備考（任意）</label>
-              <input type="text" value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="遅れる場合などメモ"
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" />
-            </div>
-            <Button onClick={handleSubmit} className="w-full h-11" disabled={submitting}>
-              {submitting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />提出中...</>
-              ) : (
-                `${selectedDates.length}日分を提出する`
-              )}
-            </Button>
-            {message && (
-              <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>{message}</p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {existing.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">提出済みシフト</CardTitle>
+      {/* æªæåºè */}
+      {notSubmitted.length > 0 && (
+        <Card className="border-red-200 bg-red-50/30">
+          <CardHeader className="pb-1 pt-2 px-3">
+            <CardTitle className="text-xs flex items-center gap-1 text-red-600">
+              <XCircle className="h-3.5 w-3.5" />
+              æªæåºï¼{notSubmitted.length}åï¼
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {existing.map((req) => (
-                <div key={req.id} className={`flex items-center justify-between py-2 border-b last:border-0 ${req.status === 'rejected' ? 'opacity-70 bg-red-50 px-2 rounded' : ''}`}>
-                  <div>
-                    <span className="text-sm font-medium">
-                      {format(new Date(req.date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
-                    </span>
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {formatTime(req.start_time)}–{formatTime(req.end_time)}
-                    </span>
-                    <span className="text-xs ml-1.5 px-1.5 py-0.5 rounded-full bg-secondary">{req.type}</span>
-                            {req.status === 'rejected' && (
-                              <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium flex items-center gap-0.5">
-                                <XCircle className="h-3 w-3" /> 却下
-                              </span>
-                            )}
-                  </div>
-                  <button onClick={() => handleDelete(req.id)}
-                    className="p-1.5 text-muted-foreground hover:text-destructive transition-colors">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+          <CardContent className="px-3 pb-2">
+            <div className="flex flex-wrap gap-1.5">
+              {notSubmitted.map(s => (
+                <span key={s.id} className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">
+                  {s.name}
+                  <span className="ml-1 text-[9px] opacity-60">
+                    {s.employment_type === 'ã¢ã«ãã¤ã' ? 'ãã¤ã' : s.employment_type}
+                  </span>
+                </span>
               ))}
             </div>
           </CardContent>
         </Card>
       )}
-    </>
+
+      {/* æåºæ¸ã¿ */}
+      {submitted.length > 0 && (
+        <Card className="border-emerald-200 bg-emerald-50/30">
+          <CardHeader className="pb-1 pt-2 px-3">
+            <CardTitle className="text-xs flex items-center gap-1 text-emerald-600">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              æåºæ¸ã¿ï¼{submitted.length}åï¼
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-3 pb-2">
+            <div className="flex flex-wrap gap-1.5">
+              {submitted.map(s => {
+                const reqs = requestsByStaff[s.id] || []
+                return (
+                  <span key={s.id} className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    {s.name}
+                    <span className="ml-1 text-[9px] opacity-60">{reqs.length}æ¥</span>
+                  </span>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 
 // =============================================
-// 出勤履歴ビュー（共通）
+// èªåã®ã·ããç³è«ãã©ã¼ã 
 // =============================================
-function HistoryView() {
-  const staff = getStoredStaff()
-  const today = new Date()
-  const [historyMonth, setHistoryMonth] = useState(() => new Date())
-  const [historyShifts, setHistoryShifts] = useState<ShiftFixed[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [rejectedRequests, setRejectedRequests] = useState<ShiftRequest[]>([])
+function MyShiftForm({ staff, targetWeekStart, onSubmitted }: {
+  staff: Staff
+  targetWeekStart: Date
+  onSubmitted: () => void
+}) {
+  const [myRequests, setMyRequests] = useState<ShiftRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [entries, setEntries] = useState<Record<string, { type: string; startTime: string; endTime: string } | null>>({})
 
-  const fetchHistory = useCallback(async () => {
-    if (!staff) return
-    setHistoryLoading(true)
-    const ms = format(startOfMonth(historyMonth), 'yyyy-MM-dd')
-    const me = format(endOfMonth(historyMonth), 'yyyy-MM-dd')
-    const { data } = await supabase
-      .from('shifts_fixed')
-      .select('*')
-      .eq('staff_id', staff.id)
-      .gte('date', ms)
-      .lte('date', me)
-      .order('date', { ascending: true })
-    if (data) setHistoryShifts(data)
-    const { data: rejData } = await supabase
-      .from('shift_requests')
-      .select('*')
-      .eq('staff_id', staff.id)
-      .eq('status', 'rejected')
-      .gte('date', ms)
-      .lte('date', me)
-    if (rejData) setRejectedRequests(rejData)
-    setHistoryLoading(false)
-  }, [staff?.id, historyMonth.toISOString()])
+  const weekEnd = addDays(targetWeekStart, 6)
+  const days = useMemo(() => eachDayOfInterval({ start: targetWeekStart, end: weekEnd }), [targetWeekStart, weekEnd])
+  const startStr = format(targetWeekStart, 'yyyy-MM-dd')
+  const endStr = format(weekEnd, 'yyyy-MM-dd')
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  // æ¢å­ã®ç³è«ãåå¾
+  useEffect(() => {
+    const fetch = async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from('shift_requests')
+        .select('*')
+        .eq('staff_id', staff.id)
+        .gte('date', startStr)
+        .lte('date', endStr)
+      setMyRequests(data || [])
+      setLoading(false)
+    }
+    fetch()
+  }, [staff.id, startStr, endStr])
 
-  const historyDays = useMemo(
-    () => eachDayOfInterval({ start: startOfMonth(historyMonth), end: endOfMonth(historyMonth) }),
-    [historyMonth.toISOString()]
-  )
-  const historyFirstDow = getDay(startOfMonth(historyMonth))
-  const getHistoryForDate = (date: Date) => historyShifts.filter((s) => s.date === format(date, 'yyyy-MM-dd'))
-  const getRejectedForDate = (date: Date) => rejectedRequests.find((r) => r.date === format(date, 'yyyy-MM-dd'))
+  const hasSubmitted = myRequests.length > 0
+
+  // å¨æ¥ãåæå¥åã§åããï¼æåã§éå§ï¼
+  const handleStartEntry = () => {
+    const newEntries: typeof entries = {}
+    for (const day of days) {
+      const dateStr = format(day, 'yyyy-MM-dd')
+      newEntries[dateStr] = { type: 'ä»è¾¼ã¿ã»å¶æ¥­', startTime: '14:00', endTime: '' }
+    }
+    setEntries(newEntries)
+  }
+
+  // æ¥ããªã³/ãªãåãæ¿ã
+  const toggleDay = (dateStr: string) => {
+    setEntries(prev => {
+      if (prev[dateStr]) {
+        return { ...prev, [dateStr]: null }
+      } else {
+        return {
+          ...prev,
+          [dateStr]: { type: 'ä»è¾¼ã¿ã»å¶æ¥­', startTime: '14:00', endTime: '' },
+        }
+      }
+    })
+  }
+
+  const updateEntry = (dateStr: string, field: string, value: string) => {
+    setEntries(prev => ({
+      ...prev,
+      [dateStr]: prev[dateStr] ? { ...prev[dateStr]!, [field]: value } : null,
+    }))
+  }
+
+  // æåº
+  const handleSubmit = async () => {
+    const toSubmit = Object.entries(entries)
+      .filter(([_, e]) => e !== null)
+      .map(([dateStr, e]) => ({
+        staff_id: staff.id,
+        date: dateStr,
+        type: e!.type,
+        start_time: e!.startTime + ':00',
+        end_time: e!.endTime ? e!.endTime + ':00' : null,
+        note: '',
+        status: 'pending',
+      }))
+
+    if (toSubmit.length === 0) return
+
+    setSubmitting(true)
+    try {
+      // æ¢å­ã®ç³è«ãåé¤ãã¦æ°è¦ä½æ
+      await supabase
+        .from('shift_requests')
+        .delete()
+        .eq('staff_id', staff.id)
+        .gte('date', startStr)
+        .lte('date', endStr)
+
+      const { error } = await supabase
+        .from('shift_requests')
+        .insert(toSubmit)
+
+      if (error) throw error
+      onSubmitted()
+      // ååå¾
+      const { data } = await supabase
+        .from('shift_requests')
+        .select('*')
+        .eq('staff_id', staff.id)
+        .gte('date', startStr)
+        .lte('date', endStr)
+      setMyRequests(data || [])
+      setEntries({})
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) return <div className="text-center py-4 text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
+
+  // æåºæ¸ã¿ãã¥ã¼
+  if (hasSubmitted && Object.keys(entries).length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          <span className="text-sm font-medium text-emerald-700">æåºæ¸ã¿ï¼{myRequests.length}æ¥åï¼</span>
+        </div>
+        <div className="space-y-1">
+          {myRequests
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(r => (
+              <div key={r.id} className="flex items-center justify-between px-3 py-1.5 bg-emerald-50/50 rounded-lg text-sm">
+                <span>{format(new Date(r.date + 'T00:00:00'), 'M/dï¼Eï¼', { locale: ja })}</span>
+                <span className="text-muted-foreground text-xs">
+                  {r.type} {formatTime(r.start_time)}â{formatTime(r.end_time)}
+                </span>
+              </div>
+            ))}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full text-xs"
+          onClick={() => {
+            const newEntries: typeof entries = {}
+            for (const day of days) {
+              const dateStr = format(day, 'yyyy-MM-dd')
+              const existing = myRequests.find(r => r.date === dateStr)
+              if (existing) {
+                newEntries[dateStr] = {
+                  type: existing.type,
+                  startTime: formatTime(existing.start_time),
+                  endTime: existing.end_time ? formatTime(existing.end_time) : '',
+                }
+              } else {
+                newEntries[dateStr] = null
+              }
+            }
+            setEntries(newEntries)
+          }}
+        >
+          ä¿®æ­£ãã
+        </Button>
+      </div>
+    )
+  }
+
+  // ç·¨éã¢ã¼ã
+  const activeDays = Object.entries(entries).filter(([_, e]) => e !== null).length
 
   return (
-    <>
-      <div className="flex items-center justify-center gap-4">
-        <button onClick={() => setHistoryMonth((m) => subMonths(m, 1))}
-          className="p-2 rounded-lg hover:bg-accent transition-colors">
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <span className="text-base font-semibold min-w-[120px] text-center">
-          {format(historyMonth, 'yyyy年M月', { locale: ja })}
-        </span>
-        <button onClick={() => setHistoryMonth((m) => addMonths(m, 1))}
-          className="p-2 rounded-lg hover:bg-accent transition-colors">
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
+    <div className="space-y-3">
+      {/* å¥åéå§ãã¿ã³ */}
+      {Object.keys(entries).length === 0 && (
+        <Button
+          onClick={handleStartEntry}
+          className="w-full"
+          variant="outline"
+        >
+          <CalendarDays className="h-4 w-4 mr-2" />
+          ã·ãããå¥åãã
+        </Button>
+      )}
 
-      <Card>
-        <CardContent className="px-2 pt-4">
-          <div className="grid grid-cols-7 mb-1">
-            {DAY_NAMES.map((d, i) => (
-              <div key={d} className={`text-center text-xs font-medium py-1 ${
-                i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-muted-foreground'
-              }`}>{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-0.5">
-            {Array.from({ length: historyFirstDow }).map((_, i) => (
-              <div key={`he-${i}`} />
-            ))}
-            {historyDays.map((date) => {
-              const shifts = getHistoryForDate(date)
-              const hasShift = shifts.length > 0
-              const dayOfWeek = getDay(date)
-              const isToday = isSameDay(date, today)
-              const rejectedReq = getRejectedForDate(date)
+      {/* æ¥å¥ã¨ã³ããª */}
+      {Object.keys(entries).length > 0 && (
+        <>
+          <div className="space-y-1.5">
+            {days.map(day => {
+              const dateStr = format(day, 'yyyy-MM-dd')
+              const entry = entries[dateStr]
+              const dow = getDay(day)
+              const isWeekend = dow === 0 || dow === 6
               return (
-                <div key={date.toISOString()}
-                  className={`
-                    flex flex-col items-center justify-center rounded-lg py-1.5 min-h-[52px] text-sm
-                    ${hasShift ? 'bg-blue-50 ring-1 ring-blue-200' : rejectedReq ? 'bg-red-50 ring-1 ring-red-200' : ''}
-                    ${isToday ? 'ring-2 ring-zinc-900' : ''}
-                    ${dayOfWeek === 0 ? 'text-red-500' : ''}
-                    ${dayOfWeek === 6 ? 'text-blue-500' : ''}
-                  `}
-                >
-                  <span className={`font-medium ${hasShift ? 'text-blue-900' : ''}`}>
-                    {format(date, 'd')}
-                  </span>
-                  {shifts.map((s) => (
-                    <span key={s.id} className="text-[7px] leading-tight text-blue-600">
-                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                <div key={dateStr} className={`rounded-lg border transition-all ${entry ? 'border-blue-200 bg-blue-50/30' : 'border-border/50 bg-muted/20 opacity-60'}`}>
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                    onClick={() => toggleDay(dateStr)}
+                  >
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${entry ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
+                      {entry && <span className="text-white text-xs">â</span>}
+                    </div>
+                    <span className={`text-sm font-medium ${isWeekend ? (dow === 0 ? 'text-red-500' : 'text-blue-500') : ''}`}>
+                      {format(day, 'M/dï¼Eï¼', { locale: ja })}
                     </span>
-                  ))}
-                  {!hasShift && rejectedReq && (
-                    <span className="text-[7px] leading-tight text-red-500">
-                      ✕{formatTime(rejectedReq.start_time)}–{formatTime(rejectedReq.end_time ?? '24:00:00')}
-                    </span>
+                    {entry && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {entry.type} {entry.startTime}ã
+                      </span>
+                    )}
+                  </div>
+                  {entry && (
+                    <div className="px-3 pb-2 flex gap-2">
+                      <select
+                        className="text-xs border rounded px-1.5 py-1 bg-white"
+                        value={entry.type}
+                        onChange={e => updateEntry(dateStr, 'type', e.target.value)}
+                      >
+                        <option value="ä»è¾¼ã¿ã»å¶æ¥­">ä»è¾¼ã¿ã»å¶æ¥­</option>
+                        <option value="ä»è¾¼ã¿">ä»è¾¼ã¿ã®ã¿</option>
+                        <option value="å¶æ¥­">å¶æ¥­ã®ã¿</option>
+                      </select>
+                      <input
+                        type="time"
+                        className="text-xs border rounded px-1.5 py-1 bg-white"
+                        value={entry.startTime}
+                        onChange={e => updateEntry(dateStr, 'startTime', e.target.value)}
+                      />
+                      <span className="text-xs self-center">ã</span>
+                      <input
+                        type="time"
+                        className="text-xs border rounded px-1.5 py-1 bg-white"
+                        value={entry.endTime}
+                        placeholder="ã©ã¹ã"
+                        onChange={e => updateEntry(dateStr, 'endTime', e.target.value)}
+                      />
+                    </div>
                   )}
                 </div>
               )
             })}
           </div>
-        </CardContent>
-      </Card>
 
-      {historyLoading ? (
-        <div className="text-center text-sm text-muted-foreground py-4 animate-pulse">読み込み中...</div>
-      ) : historyShifts.length > 0 ? (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">出勤一覧（{new Set(historyShifts.map(s => s.date)).size}日）</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {Object.entries(
-                historyShifts.reduce((acc, s) => {
-                  if (!acc[s.date]) acc[s.date] = []
-                  acc[s.date].push(s)
-                  return acc
-                }, {} as Record<string, typeof historyShifts>)
-              )
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([date, dayShifts]) => (
-                  <div key={date} className="py-2 border-b last:border-0">
-                    <span className="text-sm font-medium">
-                      {format(new Date(date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
-                    </span>
-                    <div className="flex flex-wrap gap-2 mt-0.5">
-                      {dayShifts.map((s) => (
-                        <span key={s.id} className="text-xs text-muted-foreground">
-                          <span className={`px-1.5 py-0.5 rounded-full ${
-                            s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                          }`}>{s.type}</span>
-                          {' '}{formatTime(s.start_time)}–{formatTime(s.end_time)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              }
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-center text-sm text-muted-foreground py-8">
-          この月の出勤記録はありません
-        </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => setEntries({})}
+            >
+              ã¯ãªã¢
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1"
+              disabled={activeDays === 0 || submitting}
+              onClick={handleSubmit}
+            >
+              {submitting ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" />éä¿¡ä¸­</>
+              ) : (
+                <><Send className="h-4 w-4 mr-1" />{activeDays}æ¥åãæåº</>
+              )}
+            </Button>
+          </div>
+        </>
       )}
-    </>
+    </div>
   )
 }
 
 // =============================================
-// メインページ
+// ã¡ã¤ã³ãã¼ã¸
 // =============================================
 export default function ShiftsPage() {
   const [staff, setStaff] = useState<Staff | null>(null)
-  const [staffLoaded, setStaffLoaded] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>('submit')
+  const [allStaffs, setAllStaffs] = useState<Staff[]>([])
+  const [loading, setLoading] = useState(true)
+  const [targetWeekOffset, setTargetWeekOffset] = useState(1) // ããã©ã«ã: æ¥é±
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const today = useMemo(() => new Date(), [])
+  const targetWeekStart = useMemo(
+    () => startOfWeek(addWeeks(today, targetWeekOffset), { weekStartsOn: 0 }),
+    [today, targetWeekOffset]
+  )
+
+  const isManager = staff?.employment_type === 'ç¤¾å¡' || staff?.employment_type === 'å½¹å¡'
 
   useEffect(() => {
-    setStaff(getStoredStaff())
-    setStaffLoaded(true)
+    const init = async () => {
+      const s = getStoredStaff()
+      setStaff(s)
+
+      const { data: staffData } = await supabase
+        .from('staffs')
+        .select('*')
+        .eq('is_active', true)
+        .is('deleted_at', null)
+      setAllStaffs(staffData || [])
+      setLoading(false)
+    }
+    init()
   }, [])
 
-  const isEmployee = staff?.employment_type === '社員' || staff?.employment_type === '役員'
-
-  if (!staffLoaded) return null
+  if (loading || !staff) {
+    return <div className="flex items-center justify-center min-h-[50vh] text-sm text-muted-foreground">èª­ã¿è¾¼ã¿ä¸­...</div>
+  }
 
   return (
-    <div className="space-y-4">
-      {/* タブ切替 */}
-      <div className="flex gap-2">
+    <div className="px-4 pt-3 pb-24 max-w-lg mx-auto space-y-4">
+      {/* ãããã¼ */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-bold flex items-center gap-2">
+          <CalendarDays className="h-5 w-5" />
+          ã·ããç³è«
+        </h1>
+      </div>
+
+      {/* å¯¾è±¡é±ã»ã¬ã¯ã¿ã¼ */}
+      <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
         <button
-          onClick={() => setViewMode('submit')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-            viewMode === 'submit'
-              ? 'bg-zinc-900 text-white'
-              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}
+          onClick={() => setTargetWeekOffset(prev => prev - 1)}
+          className="p-1 hover:bg-white rounded-lg transition-colors"
         >
-          <CalendarPlus className="h-4 w-4" />
-          {isEmployee ? '休み希望' : 'シフト提出'}
+          <ChevronLeft className="h-4 w-4" />
         </button>
+        <div className="text-center">
+          <p className="text-[10px] text-muted-foreground">
+            {targetWeekOffset === 0 ? 'ä»é±' : targetWeekOffset === 1 ? 'æ¥é±' : `${targetWeekOffset}é±å¾`}
+          </p>
+          <p className="text-sm font-semibold">
+            {format(targetWeekStart, 'Mædæ¥', { locale: ja })} ã {format(addDays(targetWeekStart, 6), 'Mædæ¥', { locale: ja })}
+          </p>
+        </div>
         <button
-          onClick={() => setViewMode('history')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-            viewMode === 'history'
-              ? 'bg-zinc-900 text-white'
-              : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}
+          onClick={() => setTargetWeekOffset(prev => prev + 1)}
+          className="p-1 hover:bg-white rounded-lg transition-colors"
         >
-          <History className="h-4 w-4" />
-          出勤履歴
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
-      {viewMode === 'submit' && (
-        isEmployee ? <EmployeeSubmitView /> : <PartTimeSubmitView />
+      {/* ç¤¾å¡ã»å½¹å¡: å¨å¡ã®æåºç¶æ³ */}
+      {isManager && (
+        <Card>
+          <CardHeader className="pb-2 pt-3 px-3">
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              ã¡ã³ãã¼æåºç¶æ³
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-3 pb-3">
+            <SubmissionOverview
+              key={refreshKey + '-' + format(targetWeekStart, 'yyyy-MM-dd')}
+              targetWeekStart={targetWeekStart}
+              allStaffs={allStaffs}
+            />
+          </CardContent>
+        </Card>
       )}
 
-      {viewMode === 'history' && <HistoryView />}
+      {/* èªåã®ã·ããç³è« */}
+      <Card>
+        <CardHeader className="pb-2 pt-3 px-3">
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            <Send className="h-4 w-4" />
+            {staff.name}ã®ã·ããç³è«
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-3 pb-3">
+          <MyShiftForm
+            key={refreshKey + '-form-' + format(targetWeekStart, 'yyyy-MM-dd')}
+            staff={staff}
+            targetWeekStart={targetWeekStart}
+            onSubmitted={() => setRefreshKey(prev => prev + 1)}
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }
