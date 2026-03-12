@@ -26,7 +26,7 @@ function MatrixRain() {
     resize()
     window.addEventListener('resize', resize)
 
-    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&*(){}[]|;:<>?/~'
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&*(){}[]|;:<>?/~+=_-'
     const fontSize = 14
     const columns = Math.floor(canvas.width / fontSize)
     const drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100)
