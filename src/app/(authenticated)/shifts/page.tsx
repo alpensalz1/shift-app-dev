@@ -132,7 +132,9 @@ function getPeriod(offset: number): Period {
 
   const isFirstHalf = start.getDate() <= 15
   const m = start.getMonth() + 1
-  const deadline = addDays(start, -5)
+  const deadline = isFirstHalf
+    ? new Date(start.getFullYear(), start.getMonth() - 1, 20) // 前半: 前月20日
+    : new Date(start.getFullYear(), start.getMonth(), 5)       // 後半: 当月5日
   return {
     start,
     end,
@@ -260,13 +262,12 @@ function PartTimerForm({
   periodEnd: Date
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [times, setTimes] = useState<
-    Record<string, { start: string; end: string }>
-  >({})
+  const [globalStart, setGlobalStart] = useState('')
+  const [globalEnd, setGlobalEnd] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [loadingExisting, setLoadingExisting] = useState(true)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [timeError, setTimeError] = useState('')
 
   const days = useMemo(
     () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
@@ -284,17 +285,14 @@ function PartTimerForm({
         .lte('date', fmtKey(periodEnd) + 'T23:59:59')
       if (data && data.length > 0) {
         const sel = new Set<string>()
-        const tm: Record<string, { start: string; end: string }> = {}
         data.forEach((r: ShiftRequest) => {
-          const dk = r.date.substring(0, 10)
-          sel.add(dk)
-          tm[dk] = {
-            start: (r as any).start_time ?? '',
-            end: (r as any).end_time ?? '',
-          }
+          sel.add(r.date.substring(0, 10))
         })
         setSelected(sel)
-        setTimes(tm)
+        // 最初のレコードから共通時刻をセット
+        const first = data[0] as any
+        if (first.start_time) setGlobalStart(first.start_time)
+        if (first.end_time) setGlobalEnd(first.end_time)
       }
       setLoadingExisting(false)
     }
@@ -304,50 +302,34 @@ function PartTimerForm({
   function toggleDay(dk: string) {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(dk)) {
-        next.delete(dk)
-        setTimes((t) => {
-          const n = { ...t }
-          delete n[dk]
-          return n
-        })
-        setErrors((e) => {
-          const n = { ...e }
-          delete n[dk]
-          return n
-        })
-      } else {
-        next.add(dk)
-        setTimes((t) => ({ ...t, [dk]: { start: '', end: '' } }))
-      }
+      if (next.has(dk)) next.delete(dk)
+      else next.add(dk)
       return next
     })
   }
 
-  function setTime(dk: string, field: 'start' | 'end', val: string) {
-    setTimes((prev) => ({
-      ...prev,
-      [dk]: { ...(prev[dk] ?? { start: '', end: '' }), [field]: val },
-    }))
-    setErrors((prev) => ({ ...prev, [dk]: '' }))
+  function handleStartChange(val: string) {
+    setGlobalStart(val)
+    setTimeError('')
+    if (globalEnd && val >= globalEnd) setGlobalEnd('')
   }
 
   function validate(): boolean {
-    const errs: Record<string, string> = {}
-    for (const dk of selected) {
-      const t = times[dk]
-      if (!t?.start || !t?.end) {
-        errs[dk] = '開始・終了時刻を選択してください'
-      } else if (t.start >= t.end) {
-        errs[dk] = '終了は開始より後にしてください'
-      }
+    if (!globalStart || !globalEnd) {
+      setTimeError('開始・終了時刻を選択してください')
+      return false
     }
-    setErrors(errs)
-    return Object.keys(errs).length === 0
+    if (globalStart >= globalEnd) {
+      setTimeError('終了は開始より後にしてください')
+      return false
+    }
+    setTimeError('')
+    return true
   }
 
   async function handleSubmit() {
     if (!validate()) return
+    if (selected.size === 0) return
     setSubmitting(true)
     try {
       const startKey = fmtKey(periodStart)
@@ -361,8 +343,8 @@ function PartTimerForm({
       const rows = [...selected].map((dk) => ({
         staff_id: staff.id,
         date: dk + 'T00:00:00',
-        start_time: times[dk]?.start || '',
-        end_time: times[dk]?.end || '',
+        start_time: globalStart,
+        end_time: globalEnd,
       }))
       if (rows.length > 0) await supabase.from('shift_requests').insert(rows)
       setDone(true)
@@ -382,29 +364,56 @@ function PartTimerForm({
   }
 
   const firstDow = getDay(days[0])
-  const sortedSelected = [...selected].sort()
-  const hasErrors = Object.values(errors).some((e) => e !== '')
+  const canSubmit = !!globalStart && !!globalEnd && globalStart < globalEnd && selected.size > 0
 
   return (
     <div className="space-y-3 animate-slide-up">
-      {/* 案内 */}
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
-        <p className="text-sm font-semibold text-blue-700">
-          出勤できる日をタップして選択
+      {/* 勤務時間選択 */}
+      <div className="bg-white rounded-2xl ring-1 ring-border/40 shadow-sm px-4 py-3 space-y-2">
+        <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+          <Clock className="h-4 w-4 text-blue-500" />
+          勤務時間を選択
         </p>
-        <p className="text-xs text-blue-500 mt-0.5">
-          開始・終了時刻の入力が必須です（14:00〜24:00、15分刻み）
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-[10px] text-muted-foreground mb-1">開始</p>
+            <select
+              className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
+              value={globalStart}
+              onChange={(e) => handleStartChange(e.target.value)}
+            >
+              <option value="">--:--</option>
+              {START_TIME_OPTIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+          <span className="text-muted-foreground mt-4">〜</span>
+          <div className="flex-1">
+            <p className="text-[10px] text-muted-foreground mb-1">終了</p>
+            <select
+              className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
+              value={globalEnd}
+              onChange={(e) => { setGlobalEnd(e.target.value); setTimeError('') }}
+            >
+              <option value="">--:--</option>
+              {END_TIME_OPTIONS.filter((t) => !globalStart || t > globalStart).map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {timeError && (
+          <p className="text-xs text-red-500">{timeError}</p>
+        )}
       </div>
 
-      {/* 選択カウント */}
+      {/* 出勤日選択 */}
       <div className="flex items-center justify-between px-1">
-        <span className="text-sm text-muted-foreground">出勤希望日数</span>
+        <p className="text-sm text-muted-foreground">出勤希望日をタップ</p>
         <span className="text-2xl font-bold text-blue-600 tabular-nums">
           {selected.size}
-          <span className="text-sm font-normal text-muted-foreground ml-1">
-            日
-          </span>
+          <span className="text-sm font-normal text-muted-foreground ml-1">日</span>
         </span>
       </div>
 
@@ -419,7 +428,6 @@ function PartTimerForm({
             {days.map((d) => {
               const dk = fmtKey(d)
               const isSel = selected.has(dk)
-              const hasErr = !!errors[dk]
               const dow = getDay(d)
               return (
                 <button
@@ -427,9 +435,7 @@ function PartTimerForm({
                   onClick={() => toggleDay(dk)}
                   className={`h-9 w-full rounded-xl flex items-center justify-center text-sm font-medium transition-all active:scale-95 ${
                     isSel
-                      ? hasErr
-                        ? 'bg-red-400 text-white shadow-sm'
-                        : 'bg-blue-500 text-white shadow-sm'
+                      ? 'bg-blue-500 text-white shadow-sm'
                       : dow === 0
                       ? 'text-red-500 hover:bg-red-50'
                       : dow === 6
@@ -445,87 +451,18 @@ function PartTimerForm({
         </div>
       </div>
 
-      {/* 時刻入力エリア */}
-      {sortedSelected.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground px-1">
-            ▼ 各日の時間を入力してください
-          </p>
-          {sortedSelected.map((dk) => {
-            const d = new Date(dk)
-            const dow = getDay(d)
-            const err = errors[dk]
-            const dowLabel = DOW_LABELS[dow]
-            const dowColor =
-              dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-foreground'
-            return (
-              <div
-                key={dk}
-                className={`rounded-2xl px-4 py-3 border ${
-                  err
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-white border-border/40'
-                }`}
-              >
-                <p className={`text-sm font-bold mb-2 ${dowColor}`}>
-                  {format(d, 'M/d')}（{dowLabel}）
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <p className="text-[10px] text-muted-foreground mb-1">開始</p>
-                    <select
-                      className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-                      value={times[dk]?.start ?? ''}
-                      onChange={(e) => setTime(dk, 'start', e.target.value)}
-                    >
-                      <option value="">--:--</option>
-                      {START_TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <span className="text-muted-foreground mt-4">〜</span>
-                  <div className="flex-1">
-                    <p className="text-[10px] text-muted-foreground mb-1">終了</p>
-                    <select
-                      className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-                      value={times[dk]?.end ?? ''}
-                      onChange={(e) => setTime(dk, 'end', e.target.value)}
-                    >
-                      <option value="">--:--</option>
-                      {END_TIME_OPTIONS.filter(
-                        (t) => !times[dk]?.start || t > times[dk].start
-                      ).map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {err && (
-                  <p className="text-xs text-red-500 mt-1.5">{err}</p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
       {/* 提出ボタン */}
       <Button
         className="w-full h-12 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold shadow-sm disabled:opacity-40"
         onClick={handleSubmit}
-        disabled={submitting || selected.size === 0}
+        disabled={submitting || !canSubmit}
       >
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : selected.size === 0 ? (
           '出勤希望日を選択してください'
-        ) : hasErrors ? (
-          '⚠️ 時刻入力を確認してください'
+        ) : !globalStart || !globalEnd ? (
+          '勤務時間を選択してください'
         ) : (
           <>
             <Send className="h-4 w-4 mr-2" />
