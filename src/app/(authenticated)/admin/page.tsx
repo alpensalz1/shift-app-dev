@@ -300,6 +300,7 @@ function StaffManagementTab() {
     '社員': 'bg-zinc-200/60 text-zinc-600',
     '役員': 'bg-amber-100/80 text-amber-700',
     '長期': 'bg-purple-100/80 text-purple-700',
+    'システム管理者': 'bg-sky-100/80 text-sky-700',
   }
 
   return (
@@ -323,6 +324,7 @@ function StaffManagementTab() {
               <option value="アルバイト">アルバイト</option>
               <option value="社員">社員</option>
               <option value="役員">役員</option>
+              <option value="システム管理者">システム管理者</option>
             </select>
             {newType === 'アルバイト' && (
               <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24 bg-white/80 border-blue-200/50 text-sm h-9" />

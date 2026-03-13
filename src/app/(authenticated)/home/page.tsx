@@ -88,6 +88,7 @@ function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
           const staff = staffShifts[0].staff
           const isShanin = staff?.employment_type === '社員'
           const isYakuin = staff?.employment_type === '役員'
+          const isSystemAdmin = staff?.employment_type === 'システム管理者'
           const isMe = currentStaffId != null && staffShifts[0].staff_id === currentStaffId
           return (
             <div
@@ -116,6 +117,9 @@ function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
                 )}
                 {isYakuin && (
                   <span className="text-[8px] px-1 py-0.5 rounded bg-amber-200/60 text-amber-700 shrink-0">役員</span>
+                )}
+                {isSystemAdmin && (
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-blue-200/60 text-blue-700 shrink-0">管理</span>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 ml-2">

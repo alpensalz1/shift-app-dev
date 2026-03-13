@@ -181,7 +181,7 @@ function ShiftConfirmTab() {
     return { firstOk: pF===0 && fF>0, secondOk: pS===0 && fS>0, fp: pF, sp: pS }
   }, [requests, fixedShifts])
 
-  const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2 }
+  const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2, 'システム管理者': 3 }
   const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
     .filter((r) => r.status !== 'rejected')
     .slice()
@@ -421,7 +421,7 @@ function ShiftConfirmTab() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">{req.staffs.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${req.staffs.employment_type === '社員' ? 'bg-purple-100 text-purple-800' : req.staffs.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : 'bg-zinc-100 text-zinc-600'}`}>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${req.staffs.employment_type === '社員' ? 'bg-purple-100 text-purple-800' : req.staffs.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : req.staffs.employment_type === 'システム管理者' ? 'bg-sky-100 text-sky-700' : 'bg-zinc-100 text-zinc-600'}`}>
                               {req.staffs.employment_type}
                             </span>
                           </div>
@@ -1133,9 +1133,10 @@ export function StaffManagementTab() {
   const typeColor = (t: string) =>
     t === '社員' ? 'bg-purple-100 text-purple-800' :
     t === '役員' ? 'bg-amber-100 text-amber-800' :
+    t === 'システム管理者' ? 'bg-sky-100 text-sky-700' :
     'bg-zinc-100 text-zinc-600'
 
-  const activeStaffs = staffs.filter(s => s.is_active && s.employment_type !== '役員')
+  const activeStaffs = staffs.filter(s => s.is_active && s.employment_type !== '役員' && s.employment_type !== 'システム管理者')
 
   return (
     <div className="space-y-4">
@@ -1167,6 +1168,7 @@ export function StaffManagementTab() {
               <option value="アルバイト">アルバイト</option>
               <option value="社員">社員</option>
               <option value="役員">役員</option>
+              <option value="システム管理者">システム管理者</option>
             </select>
             <input
               type="number"
@@ -1282,13 +1284,13 @@ export default function ManagePage() {
     const staff = getStoredStaff()
     setCurrentStaff(staff)
     setStaffLoaded(true)
-    if (!staff || (staff.employment_type !== '社員' && staff.employment_type !== '役員')) {
+    if (!staff || (staff.employment_type !== '社員' && staff.employment_type !== '役員' && staff.employment_type !== 'システム管理者')) {
       router.replace('/home')
     }
   }, [router])
 
   if (!staffLoaded) return null
-  if (!currentStaff || (currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員')) return null
+  if (!currentStaff || (currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員' && currentStaff.employment_type !== 'システム管理者')) return null
 
   return (
     <div className="space-y-4">
