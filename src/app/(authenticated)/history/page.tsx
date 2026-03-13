@@ -46,7 +46,7 @@ export default function HistoryPage() {
     const monthStart = fmtKey(startOfMonth(base))
     const monthEnd = fmtKey(endOfMonth(base))
     supabase
-      .from('shift_fixed')
+      .from('shifts_fixed')
       .select('*')
       .eq('staff_id', staff.id)
       .gte('date', monthStart)
