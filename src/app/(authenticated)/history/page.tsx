@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftFixed, Staff } from '@/types/database'
-import { calcWage, calcHours, formatTime } from '@/lib/utils'
+import { calcHours, formatTime } from '@/lib/utils'
 import {
   format,
   startOfMonth,
@@ -22,6 +22,8 @@ import {
 } from 'lucide-react'
 
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+const SHOPS: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
 
 function fmtKey(d: Date) {
   return format(d, 'yyyy-MM-dd')
@@ -77,7 +79,6 @@ export default function HistoryPage() {
     return map
   }, [shifts])
 
-  const isPartTimer = staff?.employment_type === 'アルバイト'
   const totalDays = Object.keys(shiftsByDate).length
   const totalHours =
     Math.round(
@@ -272,21 +273,6 @@ export default function HistoryPage() {
                           0
                         ) * 10
                       ) / 10
-                    const totalDayWage = isPartTimer
-                      ? Math.floor(
-                          dayShifts.reduce(
-                            (sum, s) =>
-                              sum +
-                              calcWage(
-                                s.start_time,
-                                s.end_time,
-                                staff!.wage || 1000
-                              ),
-                            0
-                          )
-                        )
-                      : null
-
                     return (
                       <div
                         key={dk}
@@ -316,8 +302,15 @@ export default function HistoryPage() {
                             {dayShifts.map((s) => (
                               <div
                                 key={s.id}
-                                className="flex items-center gap-2"
+                                className="flex items-center gap-2 flex-wrap"
                               >
+                                {/* 店舗バッジ */}
+                                {s.shop_id && SHOPS[s.shop_id] && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 bg-zinc-100 text-zinc-600">
+                                    {SHOPS[s.shop_id]}
+                                  </span>
+                                )}
+                                {/* シフト種別バッジ */}
                                 <span
                                   className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
                                     s.type === '仕込み'
@@ -327,28 +320,25 @@ export default function HistoryPage() {
                                 >
                                   {s.type}
                                 </span>
-                                <span className="text-sm font-medium text-foreground">
-                                  {formatTime(s.start_time)} -{' '}
-                                  {formatTime(s.end_time)}
+                                <span className="text-sm font-medium text-foreground tabular-nums">
+                                  {formatTime(s.start_time)} – {formatTime(s.end_time)}
                                 </span>
-                                <span className="text-xs text-muted-foreground">
+                                <span className="text-xs text-muted-foreground tabular-nums">
                                   {calcHours(s.start_time, s.end_time)}h
                                 </span>
                               </div>
                             ))}
                           </div>
 
-                          {/* 合計（右端） */}
-                          <div className="text-right shrink-0">
-                            {totalDayWage !== null && (
-                              <p className="text-sm font-bold text-emerald-700">
-                                ¥{totalDayWage.toLocaleString()}
+                          {/* 合計時間（右端） */}
+                          {dayShifts.length > 1 && (
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-bold text-foreground tabular-nums">
+                                {totalDayHours}h
                               </p>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              {totalDayHours}h
-                            </p>
-                          </div>
+                              <p className="text-[10px] text-muted-foreground">計</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
