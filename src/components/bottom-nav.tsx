@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, CalendarPlus, Wallet, ClipboardCheck, BarChart2 } from 'lucide-react'
+import { Home, CalendarPlus, Wallet, ClipboardCheck, BarChart2, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getStoredStaff } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
@@ -33,6 +33,7 @@ export function BottomNav() {
   const navItems = [
     { href: '/home', label: 'ホーム', icon: Home },
     { href: '/shifts', label: 'シフト申請', icon: CalendarPlus },
+    { href: '/history', label: '履歴', icon: History },
     ...(showSalary ? [{ href: '/salary', label: '給与概算', icon: Wallet }] : []),
     ...(isManager
       ? [{ href: '/manage', label: 'シフト管理', icon: ClipboardCheck, badge: pendingCount }]
