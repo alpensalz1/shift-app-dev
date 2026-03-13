@@ -7,7 +7,7 @@ export interface Shop {
     is_active?: boolean
 }
 
-export interface Staff 
+export interface Staff {
   id: number
   name: string
   token: string

@@ -93,6 +93,27 @@ function validateShiftTime(
   return { valid: true, message: '' }
 }
 
+// アルバイトのシフト時間を店舗の設定に基づき自動分割する
+// shift_config の 仕込み.default_end_time が仕込み/営業の境界時刻
+function autoSplitShift(
+  startTime: string,
+  endTime: string,
+  shopId: number,
+  configs: ShiftConfig[]
+): Array<{ type: '仕込み' | '営業'; start_time: string; end_time: string }> {
+  const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
+  if (!shikomiCfg) return [{ type: '営業', start_time: startTime, end_time: endTime }]
+  const split5 = shikomiCfg.default_end_time.substring(0, 5)  // "17:00" or "18:00"
+  const start5 = startTime.substring(0, 5)
+  const end5 = endTime.substring(0, 5)
+  if (start5 >= split5) return [{ type: '営業', start_time: startTime, end_time: endTime }]
+  if (end5 <= split5) return [{ type: '仕込み', start_time: startTime, end_time: endTime }]
+  return [
+    { type: '仕込み', start_time: startTime, end_time: shikomiCfg.default_end_time },
+    { type: '営業', start_time: shikomiCfg.default_end_time, end_time: endTime },
+  ]
+}
+
 function ShiftConfirmTab() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [requests, setRequests] = useState<RequestWithStaff[]>([])
@@ -262,6 +283,30 @@ function ShiftConfirmTab() {
     const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
     if (error) setMessage('却下に失敗: ' + error.message)
     else { setMessage(`${req.staffs.name}のシフトを却下しました`); fetchAll() }
+    setConfirming(false)
+  }
+
+  // アルバイトの仕込み・営業リクエストを店舗設定で自動分割して確定
+  const handleAutoConfirm = async (req: RequestWithStaff, shopId: number) => {
+    setConfirming(true)
+    setMessage('')
+    const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs)
+    const results = await Promise.all(
+      splits.map((s) =>
+        supabase.from('shifts_fixed').upsert(
+          { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time },
+          { onConflict: 'staff_id,date,type' }
+        )
+      )
+    )
+    const errResult = results.find((r) => r.error)
+    if (errResult?.error) {
+      setMessage('確定に失敗: ' + errResult.error.message)
+    } else {
+      const typesStr = splits.map((s) => s.type).join('・')
+      setMessage(`${req.staffs.name}のシフトを自動分割確定しました（${SHOP_NAMES[shopId]} / ${typesStr}）`)
+      fetchAll()
+    }
     setConfirming(false)
   }
 
@@ -452,8 +497,8 @@ function ShiftConfirmTab() {
                             )}
                             {req.type === '仕込み・営業' && (
                               <>
-                                <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleConfirmBoth(req, 1)}>三茶 両方一括</Button>
-                                <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleConfirmBoth(req, 2)}>下北 両方一括</Button>
+                                <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
+                                <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
                               </>
                             )}
                             <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>

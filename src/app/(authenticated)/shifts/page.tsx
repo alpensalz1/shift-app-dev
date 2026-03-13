@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { Staff, ShiftRequest, OffRequest } from '@/types/database'
+import { Staff, ShiftRequest, ShiftFixed, OffRequest } from '@/types/database'
 import { getSubmissionPeriod } from '@/lib/utils'
 import {
   format,
@@ -250,9 +250,11 @@ export default function ShiftsPage() {
 
 // =============================================
 // アルバイト用フォーム
-// 「出勤できる日」を選ぶ
-// 開始・終了時刻必須 / 15分刻み / 14:00〜24:00
+// 「先に時間を選択し、その時間帯で働きたい日をタップ」
+// 複数の時間帯対応 / 15分刻み / デフォルト14:00〜24:00
 // =============================================
+
+type DayTimeEntry = { start: string; end: string }
 
 function PartTimerForm({
   staff,
@@ -263,125 +265,101 @@ function PartTimerForm({
   periodStart: Date
   periodEnd: Date
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [globalStart, setGlobalStart] = useState('')
-  const [globalEnd, setGlobalEnd] = useState('')
+  const [currentStart, setCurrentStart] = useState('14:00')
+  const [currentEnd, setCurrentEnd] = useState('24:00')
+  const [dayTimeMap, setDayTimeMap] = useState<Record<string, DayTimeEntry>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [done, setDone] = useState(false)
-  const [loadingExisting, setLoadingExisting] = useState(true)
-  const [timeError, setTimeError] = useState('')
   const [submitError, setSubmitError] = useState('')
-  const [submittedRows, setSubmittedRows] = useState<Array<{date: string; start_time: string; end_time: string}>>([])
-  const [existingPending, setExistingPending] = useState(false)
+  const [loadingExisting, setLoadingExisting] = useState(true)
+  const [existingRequests, setExistingRequests] = useState<ShiftRequest[]>([])
+  const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
+  const [viewMode, setViewMode] = useState<'form' | 'status'>('form')
 
   const days = useMemo(
     () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
     [periodStart, periodEnd]
   )
 
-  // 既存の申請を読み込む
+  // 既存の申請と確定シフトを読み込む
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from('shift_requests')
-        .select('*')
-        .eq('staff_id', staff.id)
-        .gte('date', fmtKey(periodStart))
-        .lte('date', fmtKey(periodEnd))
-      if (data && data.length > 0) {
-        const sel = new Set<string>()
-        data.forEach((r: ShiftRequest) => {
-          sel.add(r.date.substring(0, 10))
+      const startKey = fmtKey(periodStart)
+      const endKey = fmtKey(periodEnd)
+      const [reqRes, fixedRes] = await Promise.all([
+        supabase.from('shift_requests').select('*')
+          .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+        supabase.from('shifts_fixed').select('*')
+          .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+      ])
+      if (reqRes.data && reqRes.data.length > 0) {
+        const map: Record<string, DayTimeEntry> = {}
+        reqRes.data.forEach((r: ShiftRequest) => {
+          map[r.date.substring(0, 10)] = {
+            start: r.start_time.substring(0, 5),
+            end: r.end_time.substring(0, 5),
+          }
         })
-        setSelected(sel)
-        // 最初のレコードから共通時刻をセット
-        const first = data[0] as any
-        if (first.start_time) setGlobalStart(first.start_time)
-        if (first.end_time) setGlobalEnd(first.end_time)
-        setExistingPending(true)
+        setDayTimeMap(map)
+        setExistingRequests(reqRes.data)
+        setViewMode('status')
       }
+      if (fixedRes.data) setFixedShifts(fixedRes.data)
       setLoadingExisting(false)
     }
     load()
   }, [staff.id, periodStart, periodEnd])
 
   function toggleDay(dk: string) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(dk)) next.delete(dk)
-      else next.add(dk)
+    if (currentStart >= currentEnd) return
+    setDayTimeMap((prev) => {
+      const next = { ...prev }
+      if (next[dk]) {
+        delete next[dk]
+      } else {
+        next[dk] = { start: currentStart, end: currentEnd }
+      }
       return next
     })
   }
 
-  function handleStartChange(val: string) {
-    setGlobalStart(val)
-    setTimeError('')
-    if (globalEnd && val >= globalEnd) setGlobalEnd('')
-  }
-
-  function validate(): boolean {
-    if (!globalStart || !globalEnd) {
-      setTimeError('開始・終了時刻を選択してください')
-      return false
-    }
-    if (globalStart >= globalEnd) {
-      setTimeError('終了は開始より後にしてください')
-      return false
-    }
-    setTimeError('')
-    return true
-  }
-
   async function handleSubmit() {
-    if (!validate()) return
-    if (selected.size === 0) return
+    const entries = Object.entries(dayTimeMap)
+    if (entries.length === 0) return
     setSubmitting(true)
     setSubmitError('')
     try {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
       const { error: delErr } = await supabase
-        .from('shift_requests')
-        .delete()
-        .eq('staff_id', staff.id)
-        .gte('date', startKey)
-        .lte('date', endKey)
+        .from('shift_requests').delete()
+        .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey)
       if (delErr) throw new Error('削除エラー: ' + delErr.message)
-      const rows = [...selected].map((dk) => ({
+      const rows = entries.map(([dk, times]) => ({
         staff_id: staff.id,
         date: dk,
-        start_time: globalStart,
-        end_time: globalEnd,
+        start_time: times.start,
+        end_time: times.end,
         type: '仕込み・営業' as const,
         status: 'pending' as const,
       }))
-      if (rows.length > 0) {
-        const { error: insErr } = await supabase.from('shift_requests').insert(rows)
-        if (insErr) throw new Error('送信エラー: ' + insErr.message)
-      }
-      setSubmittedRows(rows.map((r) => ({ date: r.date, start_time: r.start_time, end_time: r.end_time })))
-      setExistingPending(false)
-      setDone(true)
+      const { error: insErr } = await supabase.from('shift_requests').insert(rows)
+      if (insErr) throw new Error('送信エラー: ' + insErr.message)
+      // 最新データを再取得
+      const [reqRes2, fixedRes2] = await Promise.all([
+        supabase.from('shift_requests').select('*')
+          .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+        supabase.from('shifts_fixed').select('*')
+          .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+      ])
+      setExistingRequests(reqRes2.data || [])
+      setFixedShifts(fixedRes2.data || [])
+      setViewMode('status')
     } catch (e: any) {
       setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
     } finally {
       setSubmitting(false)
     }
   }
-
-  if (done) return (
-    <SubmittedView
-      submittedRows={submittedRows}
-      onResubmit={() => {
-        setDone(false)
-        setSubmittedRows([])
-        setSelected(new Set())
-        setGlobalStart('')
-        setGlobalEnd('')
-      }}
-    />
-  )
 
   if (loadingExisting) {
     return (
@@ -391,27 +369,49 @@ function PartTimerForm({
     )
   }
 
+  if (viewMode === 'status') {
+    return (
+      <StatusView
+        existingRequests={existingRequests}
+        fixedShifts={fixedShifts}
+        periodStart={periodStart}
+        periodEnd={periodEnd}
+        onResubmit={() => setViewMode('form')}
+      />
+    )
+  }
+
   const firstDow = getDay(days[0])
-  const isPending = existingPending
-  const canSubmit = !!globalStart && !!globalEnd && globalStart < globalEnd && selected.size > 0
+  const selectedCount = Object.keys(dayTimeMap).length
+  const timeError = currentStart && currentEnd && currentStart >= currentEnd
+    ? '終了は開始より後にしてください' : ''
+  const canSubmit = selectedCount > 0 && currentStart < currentEnd
+
+  // 時間帯ごとに日付をグループ化
+  const timeGroups = Object.entries(dayTimeMap).reduce<Record<string, string[]>>((acc, [dk, t]) => {
+    const key = `${t.start}〜${t.end}`
+    if (!acc[key]) acc[key] = []
+    acc[key].push(dk)
+    return acc
+  }, {})
 
   return (
     <div className="space-y-3 animate-slide-up">
-      {/* 勤務時間選択 */}
+      {/* ① 時間帯選択 */}
       <div className="bg-white rounded-2xl ring-1 ring-border/40 shadow-sm px-4 py-3 space-y-2">
         <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
           <Clock className="h-4 w-4 text-blue-500" />
-          勤務時間を選択
+          ① 働く時間帯を選択
         </p>
+        <p className="text-xs text-muted-foreground">この時間帯で下のカレンダーから日付をタップ。時間を変えて複数の時間帯も設定できます</p>
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <p className="text-[10px] text-muted-foreground mb-1">開始</p>
             <select
               className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-              value={globalStart}
-              onChange={(e) => handleStartChange(e.target.value)}
+              value={currentStart}
+              onChange={(e) => setCurrentStart(e.target.value)}
             >
-              <option value="">--:--</option>
               {START_TIME_OPTIONS.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
@@ -422,26 +422,25 @@ function PartTimerForm({
             <p className="text-[10px] text-muted-foreground mb-1">終了</p>
             <select
               className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-              value={globalEnd}
-              onChange={(e) => { setGlobalEnd(e.target.value); setTimeError('') }}
+              value={currentEnd}
+              onChange={(e) => setCurrentEnd(e.target.value)}
             >
-              <option value="">--:--</option>
-              {END_TIME_OPTIONS.filter((t) => !globalStart || t > globalStart).map((t) => (
+              {END_TIME_OPTIONS.filter((t) => !currentStart || t > currentStart).map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
           </div>
         </div>
-        {timeError && (
-          <p className="text-xs text-red-500">{timeError}</p>
-        )}
+        {timeError && <p className="text-xs text-red-500">{timeError}</p>}
       </div>
 
-      {/* 出勤日選択 */}
+      {/* ② 日付タップ */}
       <div className="flex items-center justify-between px-1">
-        <p className="text-sm text-muted-foreground">出勤希望日をタップ</p>
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">②</span> 出勤希望日をタップ
+        </p>
         <span className="text-2xl font-bold text-blue-600 tabular-nums">
-          {selected.size}
+          {selectedCount}
           <span className="text-sm font-normal text-muted-foreground ml-1">日</span>
         </span>
       </div>
@@ -456,15 +455,23 @@ function PartTimerForm({
             ))}
             {days.map((d) => {
               const dk = fmtKey(d)
-              const isSel = selected.has(dk)
+              const timeSel = dayTimeMap[dk]
+              const isSel = !!timeSel
+              // 現在の時間帯と一致するセル = 青、別の時間帯 = インディゴ
+              const isCurrentTime = timeSel?.start === currentStart && timeSel?.end === currentEnd
               const dow = getDay(d)
+              const shortLabel = timeSel
+                ? `${timeSel.start.substring(0, 2)}-${timeSel.end.substring(0, 2)}`
+                : null
               return (
                 <button
                   key={dk}
                   onClick={() => toggleDay(dk)}
-                  className={`h-9 w-full rounded-xl flex items-center justify-center text-sm font-medium transition-all active:scale-95 ${
+                  className={`h-11 w-full rounded-xl flex flex-col items-center justify-center gap-0 text-sm font-medium transition-all active:scale-95 ${
                     isSel
-                      ? 'bg-blue-500 text-white shadow-sm'
+                      ? isCurrentTime
+                        ? 'bg-blue-500 text-white shadow-sm'
+                        : 'bg-indigo-600 text-white shadow-sm'
                       : dow === 0
                       ? 'text-red-500 hover:bg-red-50'
                       : dow === 6
@@ -472,7 +479,10 @@ function PartTimerForm({
                       : 'text-foreground hover:bg-muted/50'
                   }`}
                 >
-                  {format(d, 'd')}
+                  <span className="text-sm leading-none">{format(d, 'd')}</span>
+                  {shortLabel && (
+                    <span className="text-[7px] leading-none opacity-90 mt-0.5">{shortLabel}</span>
+                  )}
                 </button>
               )
             })}
@@ -480,11 +490,21 @@ function PartTimerForm({
         </div>
       </div>
 
-      {/* 承認待ちバナー */}
-      {isPending && (
-        <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-          <span className="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">承認待ち</span>
-          <span>現在シフト希望が提出済みです。変更する場合は再提出してください。</span>
+      {/* 選択内訳（時間帯ごとのグループ） */}
+      {selectedCount > 0 && (
+        <div className="bg-muted/30 rounded-xl px-3 py-2 space-y-1.5">
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">選択中の日程</p>
+          {Object.entries(timeGroups).map(([timeRange, dates]) => (
+            <div key={timeRange} className="flex items-start gap-2">
+              <span className="text-xs font-semibold text-blue-600 shrink-0 mt-0.5">{timeRange}</span>
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                {dates.sort().map((dk) => {
+                  const d = new Date(dk + 'T00:00:00')
+                  return format(d, 'M/d', { locale: ja })
+                }).join('・')}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -503,14 +523,14 @@ function PartTimerForm({
       >
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
-        ) : selected.size === 0 ? (
+        ) : selectedCount === 0 ? (
           '出勤希望日を選択してください'
-        ) : !globalStart || !globalEnd ? (
-          '勤務時間を選択してください'
+        ) : timeError ? (
+          '時間帯を正しく設定してください'
         ) : (
           <>
             <Send className="h-4 w-4 mr-2" />
-            {selected.size}日分の希望を提出する
+            {selectedCount}日分の希望を提出する
           </>
         )}
       </Button>
@@ -828,69 +848,184 @@ function DeadlineBanner({ period }: { period: Period }) {
 }
 
 // =============================================
-// 共通: 完了カード
+// アルバイト用: ステータス表示
+// 確定(緑) / 承認待ち(黄) / 却下(赤) をカレンダーで確認
 // =============================================
 
-function SubmittedView({
-  submittedRows,
+function StatusView({
+  existingRequests,
+  fixedShifts,
+  periodStart,
+  periodEnd,
   onResubmit,
 }: {
-  submittedRows: Array<{ date: string; start_time: string; end_time: string }>
+  existingRequests: ShiftRequest[]
+  fixedShifts: ShiftFixed[]
+  periodStart: Date
+  periodEnd: Date
   onResubmit: () => void
 }) {
+  const days = useMemo(
+    () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
+    [periodStart, periodEnd]
+  )
+
+  // 確定済み日付セット
+  const fixedDates = useMemo(
+    () => new Set(fixedShifts.map((f) => f.date.substring(0, 10))),
+    [fixedShifts]
+  )
+
+  // 日付ごとのステータスを計算
+  const statusMap = useMemo(() => {
+    const map: Record<string, 'confirmed' | 'pending' | 'rejected'> = {}
+    existingRequests.forEach((r) => {
+      const dk = r.date.substring(0, 10)
+      if (fixedDates.has(dk)) {
+        map[dk] = 'confirmed'
+      } else if (r.status === 'rejected') {
+        map[dk] = 'rejected'
+      } else {
+        map[dk] = 'pending'
+      }
+    })
+    return map
+  }, [existingRequests, fixedDates])
+
+  const confirmedCount = Object.values(statusMap).filter((s) => s === 'confirmed').length
+  const pendingCount = Object.values(statusMap).filter((s) => s === 'pending').length
+  const rejectedCount = Object.values(statusMap).filter((s) => s === 'rejected').length
+
+  const firstDow = getDay(days[0])
+
   return (
-    <div className="flex flex-col gap-4 animate-fade-in">
-      {/* 成功ヘッダー */}
-      <div className="flex flex-col items-center gap-3 py-8">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
-          <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-        </div>
-        <p className="text-lg font-bold text-foreground">シフト希望を提出しました！</p>
-        <p className="text-sm text-muted-foreground text-center">
-          担当者がシフトを確定するまでお待ちください
-        </p>
-      </div>
-
-      {/* 承認待ちバナー */}
-      <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-        <span className="inline-flex items-center rounded-full bg-amber-400 px-2.5 py-1 text-xs font-bold text-white">
-          承認待ち
-        </span>
-        <span className="text-sm text-amber-900 font-medium">
-          一旦承認待ちです。社員・役員がシフトを確定するまでお待ちください。
-        </span>
-      </div>
-
-      {/* 提出した日程リスト */}
-      {submittedRows.length > 0 && (
-        <div className="rounded-2xl bg-white ring-1 ring-border/40 p-4 space-y-2">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-            提出したシフト希望
-          </h3>
-          {submittedRows.map((row) => {
-            const d = new Date(row.date + 'T00:00:00')
-            const label = format(d, 'M月d日(E)', { locale: ja })
-            return (
-              <div
-                key={row.date}
-                className="flex items-center justify-between py-2 border-b border-border/30 last:border-0"
-              >
-                <span className="text-sm font-medium text-foreground">{label}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    {row.start_time} – {row.end_time}
-                  </span>
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                    承認待ち
-                  </span>
-                </div>
-              </div>
-            )
-          })}
+    <div className="space-y-3 animate-fade-in">
+      {/* サマリーカード */}
+      {existingRequests.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 text-center">
+            <p className="text-xl font-bold tabular-nums text-emerald-700">{confirmedCount}</p>
+            <p className="text-[10px] text-emerald-600 font-medium">確定</p>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-center">
+            <p className="text-xl font-bold tabular-nums text-amber-700">{pendingCount}</p>
+            <p className="text-[10px] text-amber-600 font-medium">承認待ち</p>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 text-center">
+            <p className="text-xl font-bold tabular-nums text-red-700">{rejectedCount}</p>
+            <p className="text-[10px] text-red-500 font-medium">却下</p>
+          </div>
         </div>
       )}
 
-      {/* 再提出ボタン */}
+      {/* ステータスメッセージ */}
+      {confirmedCount > 0 && (
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <span className="text-sm text-emerald-800 font-medium">
+            {confirmedCount}日分のシフトが確定しました！
+            {pendingCount > 0 && `（${pendingCount}日は承認待ち）`}
+          </span>
+        </div>
+      )}
+      {confirmedCount === 0 && pendingCount > 0 && rejectedCount === 0 && (
+        <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <span className="inline-flex items-center rounded-full bg-amber-400 px-2.5 py-1 text-xs font-bold text-white">承認待ち</span>
+          <span className="text-sm text-amber-900 font-medium">社員・役員がシフトを確定するまでお待ちください。</span>
+        </div>
+      )}
+
+      {/* ステータスカレンダー */}
+      <div className="bg-white rounded-2xl ring-1 ring-border/40 shadow-sm overflow-hidden">
+        <div className="px-4 py-2 border-b border-border/30 flex items-center gap-4 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" /> 確定
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" /> 承認待ち
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> 却下
+          </span>
+        </div>
+        <DowHeader />
+        <div className="p-2">
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: firstDow }).map((_, i) => (
+              <div key={`e${i}`} />
+            ))}
+            {days.map((d) => {
+              const dk = fmtKey(d)
+              const status = statusMap[dk]
+              const req = existingRequests.find((r) => r.date.substring(0, 10) === dk)
+              const dow = getDay(d)
+              const shortLabel = req
+                ? `${req.start_time.substring(0, 2)}-${req.end_time.substring(0, 2)}`
+                : null
+              const bgClass =
+                status === 'confirmed' ? 'bg-emerald-400 text-white shadow-sm'
+                : status === 'pending'   ? 'bg-amber-400 text-white shadow-sm'
+                : status === 'rejected'  ? 'bg-red-400 text-white shadow-sm'
+                : dow === 0 ? 'text-red-300'
+                : dow === 6 ? 'text-blue-300'
+                : 'text-muted-foreground/30'
+              return (
+                <div
+                  key={dk}
+                  className={`h-11 w-full rounded-xl flex flex-col items-center justify-center gap-0 text-sm font-medium ${bgClass}`}
+                >
+                  <span className="text-sm leading-none">{format(d, 'd')}</span>
+                  {shortLabel && (
+                    <span className="text-[7px] leading-none opacity-90 mt-0.5">{shortLabel}</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 日程リスト */}
+      {existingRequests.length > 0 && (
+        <div className="rounded-2xl bg-white ring-1 ring-border/40 p-4 space-y-1">
+          <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-3">
+            提出したシフト希望
+          </h3>
+          {existingRequests
+            .slice()
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map((row) => {
+              const dk = row.date.substring(0, 10)
+              const status = statusMap[dk] ?? 'pending'
+              const d = new Date(dk + 'T00:00:00')
+              const label = format(d, 'M月d日(E)', { locale: ja })
+              return (
+                <div
+                  key={row.id}
+                  className="flex items-center justify-between py-2 border-b border-border/30 last:border-0"
+                >
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {row.start_time.substring(0, 5)} – {row.end_time.substring(0, 5)}
+                    </span>
+                    {status === 'confirmed' && (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">確定</span>
+                    )}
+                    {status === 'pending' && (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">承認待ち</span>
+                    )}
+                    {status === 'rejected' && (
+                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">却下</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+        </div>
+      )}
+
+      {/* 修正・再提出ボタン */}
       <button
         onClick={onResubmit}
         className="w-full h-11 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
