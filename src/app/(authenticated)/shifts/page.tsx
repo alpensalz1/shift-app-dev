@@ -177,7 +177,9 @@ export default function ShiftsPage() {
     )
   }
 
-  const isPartTimer = staff.employment_type === 'アルバイト'
+  const isPartTimer =
+    staff.employment_type === 'アルバイト' ||
+    staff.employment_type === 'システム管理者'
   const isFullTime =
     staff.employment_type === '社員' || staff.employment_type === '役員'
 

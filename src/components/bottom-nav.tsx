@@ -18,7 +18,8 @@ export function BottomNav() {
     const staff = getStoredStaff()
     const manager =
       staff?.employment_type === '社員' ||
-      staff?.employment_type === '役員'
+      staff?.employment_type === '役員' ||
+      staff?.employment_type === 'システム管理者'
     setIsManager(manager)
     setShowSalary(staff?.employment_type === 'アルバイト')
     if (manager) {
