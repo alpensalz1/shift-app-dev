@@ -61,6 +61,16 @@ export default function SalaryPage() {
     }
   }, [shifts, staff?.wage])
 
+  const groupedByDate = useMemo(() => {
+    const map: Record<string, ShiftFixed[]> = {}
+    shifts.forEach((sh) => {
+      const dk = sh.date.substring(0, 10)
+      if (!map[dk]) map[dk] = []
+      map[dk].push(sh)
+    })
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
+  }, [shifts])
+
   const monthLabel = format(new Date(selectedMonth + '-01'), 'yyyy年M月', { locale: ja })
 
   const handleMonthChange = (delta: number) => {
@@ -177,17 +187,21 @@ export default function SalaryPage() {
               </div>
             ) : (
               <div className="space-y-1.5">
-                {shifts.map((shift, i) => {
-                  const shiftDate = new Date(shift.date + 'T00:00:00')
-                  const dow = getDay(shiftDate)
+                {groupedByDate.map(([dk, dayShifts], i) => {
+                  const d = new Date(dk + 'T00:00:00')
+                  const dow = getDay(d)
                   const isSunday = dow === 0
                   const isSaturday = dow === 6
-                  const wage = Math.floor(calcWage(shift.start_time, shift.end_time, staff.wage || 1000))
-                  const hours = calcHours(shift.start_time, shift.end_time)
+                  const totalWage = Math.floor(
+                    dayShifts.reduce((sum, sh) => sum + calcWage(sh.start_time, sh.end_time, staff.wage || 1000), 0)
+                  )
+                  const totalHours = Math.round(
+                    dayShifts.reduce((sum, sh) => sum + calcHours(sh.start_time, sh.end_time), 0) * 10
+                  ) / 10
 
                   return (
                     <div
-                      key={shift.id}
+                      key={dk}
                       className="flex items-center justify-between text-xs p-3 rounded-xl bg-white ring-1 ring-border/40 animate-slide-up"
                       style={{ animationDelay: `${i * 30}ms` }}
                     >
@@ -197,16 +211,24 @@ export default function SalaryPage() {
                           isSaturday ? 'bg-blue-50 text-blue-500' :
                           'bg-muted/50 text-muted-foreground'
                         }`}>
-                          <span className="text-[10px] font-bold leading-none">{format(shiftDate, 'd')}</span>
-                          <span className="text-[8px] font-medium leading-none mt-0.5">{format(shiftDate, 'E', { locale: ja })}</span>
+                          <span className="text-[11px] font-bold leading-none">{format(d, 'd')}</span>
+                          <span className="text-[9px] font-medium leading-none mt-0.5">{format(d, 'E', { locale: ja })}</span>
                         </div>
-                        <div>
-                          <p className="font-semibold text-[13px]">{formatTime(shift.start_time)} - {formatTime(shift.end_time)}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{hours}時間</p>
+                        <div className="space-y-0.5">
+                          {dayShifts.map((sh) => (
+                            <div key={sh.id} className="flex items-center gap-1.5">
+                              <span className={`text-[9px] px-1 py-0.5 rounded font-semibold ${sh.type === '仕込み' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {sh.type}
+                              </span>
+                              <span>{formatTime(sh.start_time)} - {formatTime(sh.end_time)}</span>
+                              <span className="text-muted-foreground">{calcHours(sh.start_time, sh.end_time)}h</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-sm tabular-nums">¥{wage.toLocaleString()}</p>
+                        <p className="font-bold text-sm tabular-nums text-emerald-700">¥{totalWage.toLocaleString()}</p>
+                        <p className="text-muted-foreground text-[10px]">{totalHours}h</p>
                       </div>
                     </div>
                   )
