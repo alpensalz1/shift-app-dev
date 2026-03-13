@@ -164,8 +164,18 @@ function ShiftConfirmTab() {
 
   // 前半/後半確定状態
   const halfStatus = useMemo(() => {
-    const pF = requests.filter(r => parseInt(r.date.slice(8,10)) <= 15 && r.status !== 'rejected').length
-    const pS = requests.filter(r => parseInt(r.date.slice(8,10)) >= 16 && r.status !== 'rejected').length
+    // 既に確定済みの申請を除外した「真の未処理」カウント
+    const fixedKeys = new Set(fixedShifts.map(f => f.staff_id + '_' + f.date))
+    const pF = requests.filter(r =>
+      parseInt(r.date.slice(8,10)) <= 15 &&
+      r.status !== 'rejected' &&
+      !fixedKeys.has(r.staff_id + '_' + r.date)
+    ).length
+    const pS = requests.filter(r =>
+      parseInt(r.date.slice(8,10)) >= 16 &&
+      r.status !== 'rejected' &&
+      !fixedKeys.has(r.staff_id + '_' + r.date)
+    ).length
     const fF = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) <= 15).map(f => f.staff_id)).size
     const fS = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) >= 16).map(f => f.staff_id)).size
     return { firstOk: pF===0 && fF>0, secondOk: pS===0 && fS>0, fp: pF, sp: pS }
@@ -300,6 +310,7 @@ function ShiftConfirmTab() {
             {calDays.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd')
               const reqs = (dateMap[dateStr] || []).filter(r => r.status !== 'rejected')
+              const pendingReqs = reqs.filter(r => !(fixedMap[dateStr] || []).some(f => f.staff_id === r.staff_id))
               const fixed = fixedMap[dateStr] || []
               const isClosed = closedDates.includes(dateStr)
               const isSel = selectedDate === dateStr
@@ -309,7 +320,7 @@ function ShiftConfirmTab() {
                   className={`relative flex flex-col items-center justify-center rounded-lg py-1 min-h-[52px] text-sm transition-all cursor-pointer
                     ${isSel ? 'bg-zinc-900 text-white' : ''}
                     ${!isSel && isClosed ? 'bg-rose-100 ring-1 ring-rose-300' : !isSel && fixed.length > 0 ? 'bg-emerald-50 ring-1 ring-emerald-300' : ''}
-                    ${!isSel && reqs.length > 0 && fixed.length === 0 ? 'bg-amber-50 ring-1 ring-amber-200' : ''}
+                    ${!isSel && pendingReqs.length > 0 && fixed.length === 0 ? 'bg-amber-50 ring-1 ring-amber-200' : pendingReqs.length > 0 ? 'ring-1 ring-amber-300' : ''}
                     ${!isSel && reqs.length === 0 && fixed.length === 0 ? 'hover:bg-accent' : ''}
                     ${dow === 0 && !isSel ? 'text-red-500' : ''}
                     ${dow === 6 && !isSel ? 'text-blue-500' : ''}
@@ -414,7 +425,12 @@ function ShiftConfirmTab() {
                               {req.staffs.employment_type}
                             </span>
                           </div>
-                          {alreadyFixed && <span className="text-xs text-emerald-600 flex items-center gap-0.5"><Check className="h-3 w-3" /> 確定済</span>}
+                          <div className="flex items-center gap-1.5">
+                            {alreadyFixed
+                              ? <span className="text-xs text-emerald-600 flex items-center gap-0.5"><Check className="h-3 w-3" /> 確定済</span>
+                              : <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 font-semibold">承認待ち</span>
+                            }
+                          </div>
                         </div>
                         <div className="text-xs text-muted-foreground mb-2">
                           {formatTime(req.start_time)}–{formatTime(req.end_time)} / {req.type}
