@@ -268,6 +268,9 @@ function PartTimerForm({
   const [done, setDone] = useState(false)
   const [loadingExisting, setLoadingExisting] = useState(true)
   const [timeError, setTimeError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [submittedRows, setSubmittedRows] = useState<Array<{date: string; start_time: string; end_time: string}>>([])
+  const [existingPending, setExistingPending] = useState(false)
 
   const days = useMemo(
     () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
@@ -282,7 +285,7 @@ function PartTimerForm({
         .select('*')
         .eq('staff_id', staff.id)
         .gte('date', fmtKey(periodStart))
-        .lte('date', fmtKey(periodEnd) + 'T23:59:59')
+        .lte('date', fmtKey(periodEnd))
       if (data && data.length > 0) {
         const sel = new Set<string>()
         data.forEach((r: ShiftRequest) => {
@@ -293,6 +296,7 @@ function PartTimerForm({
         const first = data[0] as any
         if (first.start_time) setGlobalStart(first.start_time)
         if (first.end_time) setGlobalEnd(first.end_time)
+        setExistingPending(true)
       }
       setLoadingExisting(false)
     }
@@ -331,29 +335,51 @@ function PartTimerForm({
     if (!validate()) return
     if (selected.size === 0) return
     setSubmitting(true)
+    setSubmitError('')
     try {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
-      await supabase
+      const { error: delErr } = await supabase
         .from('shift_requests')
         .delete()
         .eq('staff_id', staff.id)
         .gte('date', startKey)
-        .lte('date', endKey + 'T23:59:59')
+        .lte('date', endKey)
+      if (delErr) throw new Error('削除エラー: ' + delErr.message)
       const rows = [...selected].map((dk) => ({
         staff_id: staff.id,
-        date: dk + 'T00:00:00',
+        date: dk,
         start_time: globalStart,
         end_time: globalEnd,
+        type: '仕込み・営業' as const,
+        status: 'pending' as const,
       }))
-      if (rows.length > 0) await supabase.from('shift_requests').insert(rows)
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase.from('shift_requests').insert(rows)
+        if (insErr) throw new Error('送信エラー: ' + insErr.message)
+      }
+      setSubmittedRows(rows.map((r) => ({ date: r.date, start_time: r.start_time, end_time: r.end_time })))
+      setExistingPending(false)
       setDone(true)
+    } catch (e: any) {
+      setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
     } finally {
       setSubmitting(false)
     }
   }
 
-  if (done) return <SuccessCard message="シフト希望を提出しました！" />
+  if (done) return (
+    <SubmittedView
+      submittedRows={submittedRows}
+      onResubmit={() => {
+        setDone(false)
+        setSubmittedRows([])
+        setSelected(new Set())
+        setGlobalStart('')
+        setGlobalEnd('')
+      }}
+    />
+  )
 
   if (loadingExisting) {
     return (
@@ -364,6 +390,7 @@ function PartTimerForm({
   }
 
   const firstDow = getDay(days[0])
+  const isPending = existingPending
   const canSubmit = !!globalStart && !!globalEnd && globalStart < globalEnd && selected.size > 0
 
   return (
@@ -450,6 +477,21 @@ function PartTimerForm({
           </div>
         </div>
       </div>
+
+      {/* 承認待ちバナー */}
+      {isPending && (
+        <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <span className="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">承認待ち</span>
+          <span>現在シフト希望が提出済みです。変更する場合は再提出してください。</span>
+        </div>
+      )}
+
+      {/* エラーメッセージ */}
+      {submitError && (
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </div>
+      )}
 
       {/* 提出ボタン */}
       <Button
@@ -786,6 +828,76 @@ function DeadlineBanner({ period }: { period: Period }) {
 // =============================================
 // 共通: 完了カード
 // =============================================
+
+function SubmittedView({
+  submittedRows,
+  onResubmit,
+}: {
+  submittedRows: Array<{ date: string; start_time: string; end_time: string }>
+  onResubmit: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-4 animate-fade-in">
+      {/* 成功ヘッダー */}
+      <div className="flex flex-col items-center gap-3 py-8">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+          <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+        </div>
+        <p className="text-lg font-bold text-foreground">シフト希望を提出しました！</p>
+        <p className="text-sm text-muted-foreground text-center">
+          担当者がシフトを確定するまでお待ちください
+        </p>
+      </div>
+
+      {/* 承認待ちバナー */}
+      <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+        <span className="inline-flex items-center rounded-full bg-amber-400 px-2.5 py-1 text-xs font-bold text-white">
+          承認待ち
+        </span>
+        <span className="text-sm text-amber-900 font-medium">
+          一旦承認待ちです。社員・役員がシフトを確定するまでお待ちください。
+        </span>
+      </div>
+
+      {/* 提出した日程リスト */}
+      {submittedRows.length > 0 && (
+        <div className="rounded-2xl bg-white ring-1 ring-border/40 p-4 space-y-2">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+            提出したシフト希望
+          </h3>
+          {submittedRows.map((row) => {
+            const d = new Date(row.date + 'T00:00:00')
+            const label = format(d, 'M月d日(E)', { locale: ja })
+            return (
+              <div
+                key={row.date}
+                className="flex items-center justify-between py-2 border-b border-border/30 last:border-0"
+              >
+                <span className="text-sm font-medium text-foreground">{label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {row.start_time} – {row.end_time}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    承認待ち
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* 再提出ボタン */}
+      <button
+        onClick={onResubmit}
+        className="w-full h-11 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
+      >
+        シフト希望を修正・再提出する
+      </button>
+    </div>
+  )
+}
 
 function SuccessCard({ message }: { message: string }) {
   return (
