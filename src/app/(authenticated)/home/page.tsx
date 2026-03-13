@@ -3,10 +3,10 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftFixedWithStaff } from '@/types/database'
+import { ShiftFixedWithStaff, ShiftRequest } from '@/types/database'
 import { formatTime } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, MapPin, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { AlertCircle, MapPin, Users, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
@@ -146,13 +146,30 @@ export default function HomePage() {
   const [shifts, setShifts] = useState<ShiftFixedWithStaff[]>([])
   const [loading, setLoading] = useState(true)
   const [currentStaffId, setCurrentStaffId] = useState<number | null>(null)
+  const [pendingRequests, setPendingRequests] = useState<ShiftRequest[]>([])
+  const [isPartTimer, setIsPartTimer] = useState(false)
 
   const weekStart = useMemo(() => startOfWeek(selectedDate, { weekStartsOn: 0 }), [selectedDate])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
   useEffect(() => {
     const staff = getStoredStaff()
-    if (staff) setCurrentStaffId(staff.id)
+    if (staff) {
+      setCurrentStaffId(staff.id)
+      const partTimer = staff.employment_type === 'アルバイト'
+      setIsPartTimer(partTimer)
+      if (partTimer) {
+        const todayStr = format(new Date(), 'yyyy-MM-dd')
+        supabase
+          .from('shift_requests')
+          .select('*')
+          .eq('staff_id', staff.id)
+          .eq('status', 'pending')
+          .gte('date', todayStr)
+          .order('date', { ascending: true })
+          .then(({ data }) => { if (data) setPendingRequests(data as ShiftRequest[]) })
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -215,6 +232,31 @@ export default function HomePage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
+
+      {/* 承認待ちシフト希望バナー (アルバイトのみ) */}
+      {isPartTimer && pendingRequests.length > 0 && (
+        <div className="flex items-start gap-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 animate-fade-in">
+          <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">
+              {pendingRequests.length}日分のシフト希望が承認待ちです
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              担当者がシフトを確定するまでお待ちください
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {pendingRequests.slice(0, 5).map(r => (
+                <span key={r.date} className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 font-medium">
+                  {format(new Date(r.date + 'T00:00:00'), 'M/d(E)', { locale: ja })}
+                </span>
+              ))}
+              {pendingRequests.length > 5 && (
+                <span className="text-[10px] text-amber-700">他{pendingRequests.length - 5}日</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Day selector - improved */}
       <div className="grid grid-cols-7 gap-1 bg-muted/40 rounded-2xl p-1.5">
