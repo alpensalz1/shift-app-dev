@@ -246,23 +246,30 @@ function StaffManagementTab() {
     // ランダムなトークンを生成（日本語名でも安全に使えるよう英数字6文字）
     const token = Math.random().toString(36).slice(2, 8)
 
-    const { data: inserted } = await supabase.from('staffs').insert({
-      name: newName.trim(), token, employment_type: newType, wage: wageNum, is_active: true, shop_id: 1,
-    }).select()
+    try {
+      const { data: inserted, error: insErr } = await supabase.from('staffs').insert({
+        name: newName.trim(), token, employment_type: newType, wage: wageNum, is_active: true, shop_id: 1,
+      }).select()
+      if (insErr) throw new Error('スタッフ登録エラー: ' + insErr.message)
 
-    if (wageNum > 0 && inserted?.[0]) {
-      await supabase.from('wage_history').insert({
-        staff_id: inserted[0].id, wage: wageNum, effective_from: fmtDate(new Date()),
-      })
+      if (wageNum > 0 && inserted?.[0]) {
+        const { error: wageErr } = await supabase.from('wage_history').insert({
+          staff_id: inserted[0].id, wage: wageNum, effective_from: fmtDate(new Date()),
+        })
+        if (wageErr) throw new Error('時給履歴登録エラー: ' + wageErr.message)
+      }
+      setNewName(''); setNewWage('')
+      fetchData()
+    } catch (e: any) {
+      alert('スタッフ追加に失敗しました: ' + (e.message || ''))
     }
-    setNewName(''); setNewWage('')
-    fetchData()
   }
 
   const handleSoftDelete = async (s: Staff) => {
     if (s.name === 'いっさ') return
     if (!confirm(`${s.name}を削除しますか？\n過去の給与データは保持されます。`)) return
-    await supabase.from('staffs').update({ deleted_at: new Date().toISOString(), is_active: false }).eq('id', s.id)
+    const { error } = await supabase.from('staffs').update({ deleted_at: new Date().toISOString(), is_active: false }).eq('id', s.id)
+    if (error) { alert('削除に失敗しました: ' + error.message); return }
     fetchData()
   }
 
@@ -291,7 +298,8 @@ function StaffManagementTab() {
   }
 
   const handleToggleType = async (s: Staff, t: string) => {
-    await supabase.from('staffs').update({ employment_type: t }).eq('id', s.id)
+    const { error } = await supabase.from('staffs').update({ employment_type: t }).eq('id', s.id)
+    if (error) { alert('雇用形態の変更に失敗しました: ' + error.message); return }
     fetchData()
   }
 
