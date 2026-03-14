@@ -43,6 +43,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (!staff) return
+    let cancelled = false
     setLoading(true)
     const base = new Date(selectedMonth + '-01')
     const monthStart = fmtKey(startOfMonth(base))
@@ -55,9 +56,12 @@ export default function HistoryPage() {
       .lte('date', monthEnd)
       .order('date', { ascending: true })
       .then(({ data }) => {
-        setShifts(data ?? [])
-        setLoading(false)
+        if (!cancelled) {
+          setShifts(data ?? [])
+          setLoading(false)
+        }
       })
+    return () => { cancelled = true }
   }, [staff?.id, selectedMonth])
 
   const monthDate = new Date(selectedMonth + '-01')
