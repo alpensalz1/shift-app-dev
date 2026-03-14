@@ -5,6 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftFixed, Staff, WageHistory } from '@/types/database'
 import { calcWage, calcHours, formatTime } from '@/lib/utils'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { format, startOfMonth, endOfMonth, getDay } from 'date-fns'
+import { ja } from 'date-fns/locale'
+import { Wallet, Clock, CalendarDays, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
 
 /** シフト日付に対応した時給を取得（wage_history 参照） */
 function getWageForDate(wageHistories: WageHistory[], staffId: number, date: string): number | null {
@@ -18,10 +22,6 @@ function getWageForDate(wageHistories: WageHistory[], staffId: number, date: str
   }
   return records.length > 0 ? records[records.length - 1].wage : null
 }
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { format, startOfMonth, endOfMonth, getDay } from 'date-fns'
-import { ja } from 'date-fns/locale'
-import { Wallet, Clock, CalendarDays, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react'
 
 export default function SalaryPage() {
   const [staff, setStaff] = useState<Staff | null>(null)

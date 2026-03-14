@@ -63,35 +63,6 @@ const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
 // タブ1: シフト確定（既存機能）
 // =============================================
 
-// バリデーション: 店舗別の仕込み/営業時間境界チェック
-function validateShiftTime(
-  configs: ShiftConfig[],
-  shopId: number,
-  type: '仕込み' | '営業',
-  startTime: string,
-  endTime: string
-): { valid: boolean; message: string } {
-  const cfg = configs.find(c => c.shop_id === shopId && c.type === type)
-  if (!cfg) return { valid: true, message: '' }
-  
-  const cfgStart = cfg.default_start_time.substring(0, 5)
-  const cfgEnd = cfg.default_end_time.substring(0, 5)
-  const st = startTime.substring(0, 5)
-  const et = (endTime || '24:00').substring(0, 5)
-  
-  if (type === '仕込み') {
-    if (et > cfgEnd) {
-      return { valid: false, message: `仕込みの終了時間(${et})が店舗の上限(${cfgEnd})を超えています` }
-    }
-  }
-  if (type === '営業') {
-    if (st < cfgStart) {
-      return { valid: false, message: `営業の開始時間(${st})が店舗の下限(${cfgStart})より前です` }
-    }
-  }
-  return { valid: true, message: '' }
-}
-
 // アルバイトのシフト時間を店舗の設定に基づき自動分割する
 // shift_config の 仕込み.default_end_time が仕込み/営業の境界時刻
 function autoSplitShift(
@@ -924,19 +895,13 @@ function AutoGenerateTab() {
     if (!preview || preview.length === 0) return
     setSaving(true)
     setMessage('')
-    // 対象スタッフの期間内の既存確定シフトを削除してからinsert
+    // 期間内の既存確定シフトをすべて削除してからinsert（前回生成分の残存を防ぐ）
     const periodStart = format(period.start, 'yyyy-MM-dd')
     const periodEnd = format(period.end, 'yyyy-MM-dd')
-    const staffIds = Array.from(new Set(preview.map(r => r.staff_id)))
-    await Promise.all(
-      staffIds.map(staffId =>
-        supabase.from('shifts_fixed')
-          .delete()
-          .eq('staff_id', staffId)
-          .gte('date', periodStart)
-          .lte('date', periodEnd)
-      )
-    )
+    await supabase.from('shifts_fixed')
+      .delete()
+      .gte('date', periodStart)
+      .lte('date', periodEnd)
     const insertRows = preview.map((r) => ({
       date: r.date, shop_id: r.shop_id, type: r.type,
       staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
