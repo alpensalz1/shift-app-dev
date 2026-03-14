@@ -1247,7 +1247,7 @@ export function StaffManagementTab() {
   const handleDelete = async (staff: Staff) => {
     if (!window.confirm(`${staff.name}を削除しますか？この操作は元に戻せません。`)) return
     setUpdating(staff.id)
-    const { error } = await supabase.from('staffs').update({ is_active: false }).eq('id', staff.id)
+    const { error } = await supabase.from('staffs').update({ is_active: false, deleted_at: new Date().toISOString() }).eq('id', staff.id)
     if (error) setMessage('削除失敗: ' + error.message)
     else { setMessage(staff.name + 'を削除しました'); fetchStaffs() }
     setUpdating(null)

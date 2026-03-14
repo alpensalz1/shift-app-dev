@@ -225,7 +225,7 @@ export default function SalaryPage() {
                   const isSaturday = dow === 6
                   const totalWage = Math.floor(
                     dayShifts.reduce((sum, sh) => {
-                      const wageAtDate = getWageForDate(wageHistories, staff.id, dk) ?? (staff.wage || 1000)
+                      const wageAtDate = getWageForDate(wageHistories, staff.id, dk) ?? staff.wage
                       return sum + calcWage(sh.start_time, sh.end_time, wageAtDate)
                     }, 0)
                   )
