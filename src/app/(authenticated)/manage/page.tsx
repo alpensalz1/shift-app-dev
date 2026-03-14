@@ -77,9 +77,10 @@ function autoSplitShift(
   const start5 = startTime.substring(0, 5)
   const end5 = endTime.substring(0, 5)
   if (start5 >= split5) return [{ type: '営業', start_time: startTime, end_time: endTime }]
-  if (end5 <= split5) return [{ type: '仕込み', start_time: startTime, end_time: endTime }]
   // アルバイト/長期は仕込みスタートを14:00未満にしない（社員は11:00スタートだがアルバイトは14:00固定）
+  // ※ この cap は全ブランチに適用: 仕込みのみシフト・分割シフト両方で有効
   const shikomiStart = (minShikomiStart && start5 < minShikomiStart) ? minShikomiStart : startTime
+  if (end5 <= split5) return [{ type: '仕込み', start_time: shikomiStart, end_time: endTime }]
   // shift_config の時刻はDB上 HH:MM:SS 形式のため substring(0,5) で HH:MM に統一
   return [
     { type: '仕込み', start_time: shikomiStart, end_time: split5 },
