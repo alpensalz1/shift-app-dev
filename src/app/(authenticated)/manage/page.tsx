@@ -702,25 +702,52 @@ function RulesTab() {
 // =============================================
 // タブ3: 自動生成
 // =============================================
+
+/**
+ * 指定した日付を「含む」前半/後半の期間を返す
+ * 1〜15日 → 当月1〜15日
+ * 16〜末日 → 当月16日〜末日
+ * ※ getSubmissionPeriod は「次の提出締め切り期間」を返すため
+ *   ナビゲーション用途には使えない
+ */
+function getPeriodContaining(date: Date): { start: Date; end: Date; deadline: Date } {
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  const day = date.getDate()
+  if (day <= 15) {
+    return {
+      start: new Date(year, month, 1),
+      end: new Date(year, month, 15),
+      deadline: new Date(year, month - 1, 20),
+    }
+  } else {
+    return {
+      start: new Date(year, month, 16),
+      end: new Date(year, month + 1, 0),
+      deadline: new Date(year, month, 5),
+    }
+  }
+}
+
 function AutoGenerateTab() {
   const today = new Date()
 
   // 対象期間（前半/後半の選択）
   const [periodOffset, setPeriodOffset] = useState(0) // 0=今期, 1=次期, -1=前期
   const basePeriod = getSubmissionPeriod(today)
-  // periodOffsetに応じてずらす
+  // periodOffsetに応じてずらす（前半↔後半を正確に1ステップずつ移動）
   const period = useMemo(() => {
     if (periodOffset === 0) return basePeriod
-    // 次期: basePeriod.end + 1日のperiod
-    let ref = today
-    for (let i = 0; i < Math.abs(periodOffset); i++) {
+    let p = basePeriod
+    const steps = Math.abs(periodOffset)
+    for (let i = 0; i < steps; i++) {
       if (periodOffset > 0) {
-        ref = addDays(basePeriod.end, 1 + i * 16)
+        p = getPeriodContaining(addDays(p.end, 1))
       } else {
-        ref = addDays(basePeriod.start, -1 - i * 16)
+        p = getPeriodContaining(addDays(p.start, -1))
       }
     }
-    return getSubmissionPeriod(addDays(periodOffset > 0 ? basePeriod.end : basePeriod.start, periodOffset > 0 ? 1 : -1))
+    return p
   }, [periodOffset, basePeriod.start.toISOString(), basePeriod.end.toISOString()])
 
   const [rules, setRules] = useState<RuleWithStaff[]>([])
