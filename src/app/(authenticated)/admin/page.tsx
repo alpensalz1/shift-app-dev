@@ -137,6 +137,7 @@ function LaborCostTab({ month }: { month: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     const [y, m] = month.split('-').map(Number)
     const startDate = `${month}-01`
     const endDate = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
@@ -145,11 +146,13 @@ function LaborCostTab({ month }: { month: string }) {
       supabase.from('shifts_fixed').select('*').gte('date', startDate).lte('date', endDate),
       supabase.from('wage_history').select('*'),
     ]).then(([sR, shR, wR]) => {
+      if (cancelled) return
       setStaffs(sR.data || [])
       setShifts(shR.data || [])
       setWageHistories(wR.data || [])
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [month])
 
   if (loading) return (
@@ -457,6 +460,7 @@ function FulfillmentTab({ month }: { month: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     const [y, m] = month.split('-').map(Number)
     const start = `${month}-01`
     const end = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
@@ -466,12 +470,14 @@ function FulfillmentTab({ month }: { month: string }) {
       supabase.from('shops').select('*'),
       supabase.from('closed_dates').select('*').gte('date', start).lte('date', end),
     ]).then(([cR, sR, shR, cdR]) => {
+      if (cancelled) return
       setConfigs(cR.data || [])
       setShifts(sR.data || [])
       setShops(shR.data || [])
       setClosedDates(cdR.data || [])
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [month])
 
   if (loading) return (
@@ -704,6 +710,7 @@ function MonthlyReportTab({ month }: { month: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     const [y, m] = month.split('-').map(Number)
     const s = `${month}-01`, e = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
     Promise.all([
@@ -712,9 +719,11 @@ function MonthlyReportTab({ month }: { month: string }) {
       supabase.from('wage_history').select('*'),
       supabase.from('shops').select('*'),
     ]).then(([sR, shR, wR, spR]) => {
+      if (cancelled) return
       setStaffs(sR.data || []); setShifts(shR.data || []); setWH(wR.data || []); setShops(spR.data || [])
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [month])
 
   if (loading) return (
