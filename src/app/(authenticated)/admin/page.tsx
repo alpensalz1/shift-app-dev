@@ -273,13 +273,21 @@ function StaffManagementTab() {
 
     const prev = new Date(editingWage.effectiveFrom)
     prev.setDate(prev.getDate() - 1)
-    const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
-    if (latest) await supabase.from('wage_history').update({ effective_to: fmtDate(prev) }).eq('id', latest.id)
-
-    await supabase.from('wage_history').insert({ staff_id: editingWage.staffId, wage: nw, effective_from: editingWage.effectiveFrom })
-    await supabase.from('staffs').update({ wage: nw }).eq('id', editingWage.staffId)
-    setEditingWage(null)
-    fetchData()
+    try {
+      const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
+      if (latest) {
+        const { error: updErr } = await supabase.from('wage_history').update({ effective_to: fmtDate(prev) }).eq('id', latest.id)
+        if (updErr) throw new Error('履歴更新エラー: ' + updErr.message)
+      }
+      const { error: insErr } = await supabase.from('wage_history').insert({ staff_id: editingWage.staffId, wage: nw, effective_from: editingWage.effectiveFrom })
+      if (insErr) throw new Error('履歴追加エラー: ' + insErr.message)
+      const { error: wageErr } = await supabase.from('staffs').update({ wage: nw }).eq('id', editingWage.staffId)
+      if (wageErr) throw new Error('時給更新エラー: ' + wageErr.message)
+      setEditingWage(null)
+      fetchData()
+    } catch (e: any) {
+      alert('時給変更に失敗しました: ' + (e.message || ''))
+    }
   }
 
   const handleToggleType = async (s: Staff, t: string) => {
