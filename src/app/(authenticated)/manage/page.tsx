@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
-import { formatTime, getSubmissionPeriod, calcWage } from '@/lib/utils'
+import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest, WageHistory } from '@/types/database'
+import { formatTime, getSubmissionPeriod, calcWage, calcHours as calcHoursUtil } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -1044,11 +1044,26 @@ function AutoGenerateTab() {
 // ==============================================
 // タブ人件費：アルバイト人件費
 // ==============================================
+
+/** シフト日付に対応した時給を取得（wage_history 参照） */
+function getWageForDateManage(wageHistories: WageHistory[], staffId: number, date: string): number | null {
+  const records = wageHistories
+    .filter((w) => w.staff_id === staffId)
+    .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
+  for (const r of records) {
+    if (date >= r.effective_from && (!r.effective_to || date <= r.effective_to)) {
+      return r.wage
+    }
+  }
+  return records.length > 0 ? records[records.length - 1].wage : null
+}
+
 export function LaborCostTab() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [loading, setLoading] = useState(false)
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
+  const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
 
   const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
   const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
@@ -1056,29 +1071,27 @@ export function LaborCostTab() {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const [sRes, fRes] = await Promise.all([
+      const [sRes, fRes, wRes] = await Promise.all([
         supabase.from('staffs').select('*').eq('is_active', true),
         supabase.from('shifts_fixed').select('*').gte('date', monthStart).lte('date', monthEnd),
+        supabase.from('wage_history').select('*'),
       ])
       if (sRes.data) setStaffs(sRes.data)
       if (fRes.data) setFixedShifts(fRes.data)
+      if (wRes.data) setWageHistories(wRes.data)
       setLoading(false)
     }
     load()
   }, [monthStart, monthEnd])
 
-  const calcHours = (start: string, end: string | null) => {
-    const effectiveEnd = end ?? '24:00:00'
-    const [sh, sm] = start.split(':').map(Number)
-    const [eh, em] = effectiveEnd.split(':').map(Number)
-    return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60)
-  }
-
   const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
   const staffCosts = partTimers.map(staff => {
     const shifts = fixedShifts.filter(f => f.staff_id === staff.id)
-    const totalHours = shifts.reduce((sum, f) => sum + calcHours(f.start_time, f.end_time), 0)
-    const totalCost = shifts.reduce((sum, f) => sum + calcWage(f.start_time, f.end_time, staff.wage), 0)
+    const totalHours = shifts.reduce((sum, f) => sum + calcHoursUtil(f.start_time, f.end_time), 0)
+    const totalCost = shifts.reduce((sum, f) => {
+      const w = getWageForDateManage(wageHistories, staff.id, f.date) ?? staff.wage
+      return sum + calcWage(f.start_time, f.end_time, w)
+    }, 0)
     return { staff, shiftCount: shifts.length, totalHours, totalCost }
   })
   const grandTotal = staffCosts.reduce((sum, s) => sum + s.totalCost, 0)

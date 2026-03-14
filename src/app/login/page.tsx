@@ -405,6 +405,7 @@ export default function LoginPage() {
       .from('staffs')
       .select('*')
       .eq('token', adminToken.trim())
+      .eq('is_active', true)
       .single()
     setAdminLoading(false)
     if (dbError || !data) {
@@ -413,7 +414,7 @@ export default function LoginPage() {
     }
     storeStaff(data)
     setShowAdminLogin(false)
-    router.push('/')
+    router.replace('/home')
   }
 
   useEffect(() => {

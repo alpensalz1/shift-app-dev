@@ -592,6 +592,8 @@ function FullTimeForm({
   }, [staff.id, periodStart, periodEnd])
 
   function cycleChoice(dk: string) {
+    // 過去日は変更不可
+    if (dk < format(new Date(), 'yyyy-MM-dd')) return
     setChoices((prev) => {
       const current = prev[dk]
       const idx = CHOICE_CYCLE.indexOf(current)
@@ -698,12 +700,16 @@ function FullTimeForm({
               const choice = choices[dk]
               const style = choice ? CHOICE_STYLES[choice] : null
               const dow = getDay(d)
+              const isPast = dk < format(new Date(), 'yyyy-MM-dd')
               return (
                 <button
                   key={dk}
                   onClick={() => cycleChoice(dk)}
+                  disabled={isPast}
                   className={`h-10 w-full rounded-xl flex flex-col items-center justify-center gap-0 text-sm font-medium transition-all active:scale-95 ${
-                    style
+                    isPast
+                      ? 'text-muted-foreground/30 cursor-not-allowed'
+                      : style
                       ? `${style.bg} ${style.text} shadow-sm`
                       : dow === 0
                       ? 'text-red-500 hover:bg-red-50'
@@ -713,7 +719,7 @@ function FullTimeForm({
                   }`}
                 >
                   <span className="text-sm leading-none">{format(d, 'd')}</span>
-                  {style && (
+                  {style && !isPast && (
                     <span className="text-[8px] leading-none opacity-90">
                       {style.badge}
                     </span>
