@@ -914,13 +914,21 @@ function AutoGenerateTab() {
     if (!preview || preview.length === 0) return
     setSaving(true)
     setMessage('')
-    // 期間内の既存確定シフトをすべて削除してからinsert（前回生成分の残存を防ぐ）
+    // 期間内の社員・役員の確定シフトのみ削除してからinsert（前回生成分の残存を防ぐ）
+    // ※ アルバイトの手動確定シフトは削除しない
     const periodStart = format(period.start, 'yyyy-MM-dd')
     const periodEnd = format(period.end, 'yyyy-MM-dd')
-    await supabase.from('shifts_fixed')
-      .delete()
-      .gte('date', periodStart)
-      .lte('date', periodEnd)
+    const employeeIds = [
+      ...allStaffs.map(s => s.id),
+      ...allExecutives.map(s => s.id),
+    ]
+    if (employeeIds.length > 0) {
+      await supabase.from('shifts_fixed')
+        .delete()
+        .gte('date', periodStart)
+        .lte('date', periodEnd)
+        .in('staff_id', employeeIds)
+    }
     const insertRows = preview.map((r) => ({
       date: r.date, shop_id: r.shop_id, type: r.type,
       staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
