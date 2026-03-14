@@ -166,9 +166,12 @@ function LaborCostTab({ month }: { month: string }) {
       supabase.from('wage_history').select('*'),
     ]).then(([sR, shR, wR]) => {
       if (cancelled) return
-      setStaffs(sR.data || [])
-      setShifts(shR.data || [])
-      setWageHistories(wR.data || [])
+      if (sR.error) console.error('staffs取得失敗:', sR.error.message)
+      else setStaffs(sR.data || [])
+      if (shR.error) console.error('shifts_fixed取得失敗:', shR.error.message)
+      else setShifts(shR.data || [])
+      if (wR.error) console.error('wage_history取得失敗:', wR.error.message)
+      else setWageHistories(wR.data || [])
       setLoading(false)
     })
     return () => { cancelled = true }
@@ -492,10 +495,14 @@ function FulfillmentTab({ month }: { month: string }) {
       supabase.from('closed_dates').select('*').gte('date', start).lte('date', end),
     ]).then(([cR, sR, shR, cdR]) => {
       if (cancelled) return
-      setConfigs(cR.data || [])
-      setShifts(sR.data || [])
-      setShops(shR.data || [])
-      setClosedDates(cdR.data || [])
+      if (cR.error) console.error('shift_config取得失敗:', cR.error.message)
+      else setConfigs(cR.data || [])
+      if (sR.error) console.error('shifts_fixed取得失敗:', sR.error.message)
+      else setShifts(sR.data || [])
+      if (shR.error) console.error('shops取得失敗:', shR.error.message)
+      else setShops(shR.data || [])
+      if (cdR.error) console.error('closed_dates取得失敗:', cdR.error.message)
+      else setClosedDates(cdR.data || [])
       setLoading(false)
     })
     return () => { cancelled = true }
@@ -743,7 +750,14 @@ function MonthlyReportTab({ month }: { month: string }) {
       supabase.from('shops').select('*'),
     ]).then(([sR, shR, wR, spR]) => {
       if (cancelled) return
-      setStaffs(sR.data || []); setShifts(shR.data || []); setWH(wR.data || []); setShops(spR.data || [])
+      if (sR.error) console.error('staffs取得失敗:', sR.error.message)
+      else setStaffs(sR.data || [])
+      if (shR.error) console.error('shifts_fixed取得失敗:', shR.error.message)
+      else setShifts(shR.data || [])
+      if (wR.error) console.error('wage_history取得失敗:', wR.error.message)
+      else setWH(wR.data || [])
+      if (spR.error) console.error('shops取得失敗:', spR.error.message)
+      else setShops(spR.data || [])
       setLoading(false)
     })
     return () => { cancelled = true }
