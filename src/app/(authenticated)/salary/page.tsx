@@ -37,6 +37,7 @@ export default function SalaryPage() {
 
   useEffect(() => {
     if (!staff) return
+    let cancelled = false
 
     const monthStart = format(startOfMonth(new Date(selectedMonth + '-01')), 'yyyy-MM-dd')
     const monthEnd = format(endOfMonth(new Date(selectedMonth + '-01')), 'yyyy-MM-dd')
@@ -57,6 +58,7 @@ export default function SalaryPage() {
           .select('*')
           .eq('staff_id', staff.id),
       ])
+      if (cancelled) return
       if (shiftRes.error) {
         setFetchError('シフトデータの取得に失敗しました: ' + shiftRes.error.message)
       } else {
@@ -71,6 +73,7 @@ export default function SalaryPage() {
     }
 
     fetchShifts()
+    return () => { cancelled = true }
   }, [staff?.id, selectedMonth])
 
   const stats = useMemo(() => {
