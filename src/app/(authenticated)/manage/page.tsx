@@ -346,6 +346,8 @@ function ShiftConfirmTab() {
   }
 
   const setClosedDay = async (dateStr: string) => {
+    // confirming ガードで連打による二重 DB 操作を防ぐ
+    setConfirming(true)
     const alreadyClosed = closedDates.includes(dateStr)
     try {
       if (alreadyClosed) {
@@ -365,6 +367,8 @@ function ShiftConfirmTab() {
     } catch (e: any) {
       setMessage(e.message || '処理に失敗しました')
       await fetchAll()
+    } finally {
+      setConfirming(false)
     }
   }
 
@@ -457,7 +461,8 @@ function ShiftConfirmTab() {
               <span className="text-xs font-normal text-muted-foreground">希望 {selectedRequests.length}名 / 確定 {selectedFixed.length}名</span>
               <button
                 onClick={() => setClosedDay(selectedDate!)}
-                className={`text-xs px-2 py-0.5 rounded-full border transition-all ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
+                disabled={confirming}
+                className={`text-xs px-2 py-0.5 rounded-full border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
               >
                 {closedDates.includes(selectedDate!) ? '定休日解除' : '定休日に設定'}
               </button>
