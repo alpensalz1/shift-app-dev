@@ -824,6 +824,9 @@ function AutoGenerateTab() {
     for (const date of dates) {
       const dateStr = format(date, 'yyyy-MM-dd')
 
+      // この日すでにいずれかの店舗に割り当て済みのスタッフID（重複配置防止）
+      const assignedToday = new Set<number>()
+
       for (const shopId of [1, 2] as const) {
         const shopRules = rules
           .filter((r) => r.shop_id === shopId)
@@ -834,8 +837,9 @@ function AutoGenerateTab() {
         let fullDayStaff: Staff | null = null
         const prepOnlyStaffList: Staff[] = []
 
-        // Tier1: ルール設定社員（優先順に）
+        // Tier1: ルール設定社員（優先順に）※他店舗割り当て済みは除外
         for (const rule of shopRules) {
+          if (assignedToday.has(rule.staff_id)) continue
           const staff = staffMap[rule.staff_id]
           if (!staff) continue
           const offType = offMap[rule.staff_id]?.[dateStr]
@@ -848,10 +852,11 @@ function AutoGenerateTab() {
           break
         }
 
-        // Tier2: ルール設定外の社員
+        // Tier2: ルール設定外の社員 ※他店舗割り当て済みは除外
         if (!fullDayStaff) {
           for (const staff of allStaffs) {
             if (shopRuledIds.has(staff.id)) continue
+            if (assignedToday.has(staff.id)) continue
             const offType = offMap[staff.id]?.[dateStr]
             if (offType === '休み') continue
             if (offType === '仕込みのみ') {
@@ -863,9 +868,11 @@ function AutoGenerateTab() {
           }
         }
 
-        // Tier3: 役員（最もシフト数が少ない人を優先）
+        // Tier3: 役員（最もシフト数が少ない人を優先）※他店舗割り当て済みは除外
         if (!fullDayStaff && allExecutives.length > 0) {
-          const available = allExecutives.filter(s => offMap[s.id]?.[dateStr] !== '休み')
+          const available = allExecutives.filter(s =>
+            !assignedToday.has(s.id) && offMap[s.id]?.[dateStr] !== '休み'
+          )
           if (available.length > 0) {
             available.sort((a, b) => (execShiftCount[a.id] ?? 0) - (execShiftCount[b.id] ?? 0))
             fullDayStaff = available[0]
@@ -880,6 +887,7 @@ function AutoGenerateTab() {
             staff_id: staff.id, staff_name: staff.name,
             type: '仕込み', start_time: t.start, end_time: t.end, note: '仕込みのみ',
           })
+          assignedToday.add(staff.id)
         }
 
         // フル出勤の人（仕込み+営業 = 2行）
@@ -898,6 +906,7 @@ function AutoGenerateTab() {
             staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
             type: '営業', start_time: t2.start, end_time: t2.end, note: isExec ? '役員' : '',
           })
+          assignedToday.add(fullDayStaff.id)
         }
         // 埋まらない場合は空欄（エラーなし）
       }
