@@ -32,6 +32,7 @@ export default function SalaryPage() {
   const [shifts, setShifts] = useState<ShiftFixed[]>([])
   const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
   const [selectedMonth, setSelectedMonth] = useState(() => format(new Date(), 'yyyy-MM'))
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function SalaryPage() {
 
     const fetchShifts = async () => {
       setLoading(true)
+      setFetchError('')
       const [shiftRes, wageRes] = await Promise.all([
         supabase
           .from('shifts_fixed')
@@ -55,8 +57,16 @@ export default function SalaryPage() {
           .select('*')
           .eq('staff_id', staff.id),
       ])
-      if (shiftRes.data) setShifts(shiftRes.data)
-      if (wageRes.data) setWageHistories(wageRes.data)
+      if (shiftRes.error) {
+        setFetchError('シフトデータの取得に失敗しました: ' + shiftRes.error.message)
+      } else {
+        setShifts(shiftRes.data ?? [])
+      }
+      if (wageRes.error) {
+        setFetchError(prev => prev ? prev + ' / ' + wageRes.error!.message : '時給履歴の取得に失敗しました: ' + wageRes.error!.message)
+      } else {
+        setWageHistories(wageRes.data ?? [])
+      }
       setLoading(false)
     }
 
@@ -155,6 +165,12 @@ export default function SalaryPage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
+
+      {fetchError && (
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {fetchError}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
