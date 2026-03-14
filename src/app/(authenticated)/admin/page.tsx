@@ -207,7 +207,7 @@ function LaborCostTab({ month }: { month: string }) {
           <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center">
             <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
           </div>
-          <span className="text-xs text-emerald-700/70 font-medium">アルバイト人件費合計</span>
+          <span className="text-xs text-emerald-700/70 font-medium">アルバイト・長期人件費合計</span>
         </div>
         <p className="text-2xl font-extrabold text-emerald-900 tabular-nums">
           ¥{Math.round(total).toLocaleString()}
@@ -378,15 +378,16 @@ function StaffManagementTab() {
           <div className="flex gap-2">
             <select
               value={newType}
-              onChange={e => { setNewType(e.target.value); if (e.target.value !== 'アルバイト') setNewWage('') }}
+              onChange={e => { setNewType(e.target.value); if (e.target.value !== 'アルバイト' && e.target.value !== '長期') setNewWage('') }}
               className="flex-1 h-9 rounded-lg border border-blue-200/50 bg-white/80 px-3 text-sm"
             >
               <option value="アルバイト">アルバイト</option>
+              <option value="長期">長期</option>
               <option value="社員">社員</option>
               <option value="役員">役員</option>
               <option value="システム管理者">システム管理者</option>
             </select>
-            {newType === 'アルバイト' && (
+            {(newType === 'アルバイト' || newType === '長期') && (
               <Input placeholder="時給" type="number" value={newWage} onChange={e => setNewWage(e.target.value)} className="w-24 bg-white/80 border-blue-200/50 text-sm h-9" />
             )}
           </div>
@@ -417,12 +418,12 @@ function StaffManagementTab() {
                     <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${typeColors[s.employment_type] || 'bg-gray-100 text-gray-600'}`}>
                       {s.employment_type}
                     </span>
-                    {s.employment_type === 'アルバイト' && s.wage > 0 && (
+                    {(s.employment_type === 'アルバイト' || s.employment_type === '長期') && s.wage > 0 && (
                       <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">¥{s.wage.toLocaleString()}/h</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
-                    {s.employment_type === 'アルバイト' && (
+                    {(s.employment_type === 'アルバイト' || s.employment_type === '長期') && (
                       <>
                         <button
                           onClick={() => handleToggleType(s, '社員')}
@@ -448,7 +449,7 @@ function StaffManagementTab() {
                     )}
                   </div>
                 </div>
-                {s.employment_type === 'アルバイト' && hist.length > 0 && (
+                {(s.employment_type === 'アルバイト' || s.employment_type === '長期') && hist.length > 0 && (
                   <div className="mt-1.5 ml-1 space-y-0.5">
                     {hist.slice(0, 3).map(h => (
                       <p key={h.id} className="text-[10px] text-muted-foreground/70 tabular-nums">
@@ -806,7 +807,7 @@ function MonthlyReportTab({ month }: { month: string }) {
 
   const [y, m] = month.split('-').map(Number)
   const ml = `${y}年${m}月`
-  const albeits = staffs.filter(s => s.employment_type === 'アルバイト')
+  const albeits = staffs.filter(s => s.employment_type === 'アルバイト' || s.employment_type === '長期')
   const totalShifts = shifts.length
   const uniqueDays = new Set(shifts.map(s => s.date)).size
   let totalWage = 0, totalHours = 0, nightH = 0
@@ -831,7 +832,7 @@ function MonthlyReportTab({ month }: { month: string }) {
 
   const statCards = [
     { label: '総シフト数', value: String(totalShifts), sub: `${uniqueDays}営業日`, color: 'from-blue-50 to-indigo-50/50', ring: 'ring-blue-100/50', textColor: 'text-blue-900', icon: Briefcase, iconColor: 'text-blue-600', iconBg: 'bg-blue-500/10' },
-    { label: '人件費', value: `¥${Math.round(totalWage).toLocaleString()}`, sub: 'アルバイト', color: 'from-emerald-50 to-teal-50/50', ring: 'ring-emerald-100/50', textColor: 'text-emerald-900', icon: DollarSign, iconColor: 'text-emerald-600', iconBg: 'bg-emerald-500/10' },
+    { label: '人件費', value: `¥${Math.round(totalWage).toLocaleString()}`, sub: 'アルバイト・長期', color: 'from-emerald-50 to-teal-50/50', ring: 'ring-emerald-100/50', textColor: 'text-emerald-900', icon: DollarSign, iconColor: 'text-emerald-600', iconBg: 'bg-emerald-500/10' },
     { label: '総労働時間', value: `${totalHours.toFixed(1)}h`, sub: '', color: 'from-purple-50 to-fuchsia-50/50', ring: 'ring-purple-100/50', textColor: 'text-purple-900', icon: Clock, iconColor: 'text-purple-600', iconBg: 'bg-purple-500/10' },
     { label: '平均シフト', value: `${avgH.toFixed(1)}h`, sub: '', color: 'from-amber-50 to-orange-50/50', ring: 'ring-amber-100/50', textColor: 'text-amber-900', icon: TrendingUp, iconColor: 'text-amber-600', iconBg: 'bg-amber-500/10' },
   ]
