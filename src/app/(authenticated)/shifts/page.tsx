@@ -891,10 +891,21 @@ function StatusView({
   // 日付ごとのステータスを計算（partial = 一部確定）
   const statusMap = useMemo(() => {
     const map: Record<string, 'confirmed' | 'partial' | 'pending' | 'rejected'> = {}
+    // 日付ごとの確定シフト数を事前集計（partial判定に使用）
+    const fixedCountByDate: Record<string, number> = {}
+    fixedShifts.forEach((f) => {
+      const dk = f.date.substring(0, 10)
+      fixedCountByDate[dk] = (fixedCountByDate[dk] ?? 0) + 1
+    })
     existingRequests.forEach((r) => {
       const dk = r.date.substring(0, 10)
       if (fixedDates.has(dk)) {
-        map[dk] = 'confirmed'
+        // 仕込み・営業申請で確定シフトが1件のみ = 一部確定
+        if (r.type === '仕込み・営業' && (fixedCountByDate[dk] ?? 0) < 2) {
+          map[dk] = 'partial'
+        } else {
+          map[dk] = 'confirmed'
+        }
       } else if (r.status === 'rejected') {
         map[dk] = 'rejected'
       } else {
@@ -902,7 +913,7 @@ function StatusView({
       }
     })
     return map
-  }, [existingRequests, fixedDates])
+  }, [existingRequests, fixedDates, fixedShifts])
 
   // 日付ごとの確定シフト
   const fixedByDate = useMemo(() => {
