@@ -821,6 +821,7 @@ function AutoGenerateTab() {
 
         let fullDayStaff: Staff | null = null
         const prepOnlyStaffList: Staff[] = []
+        const eigyoOnlyStaffList: Staff[] = []
 
         // Tier1: ルール設定社員（優先順に）※他店舗割り当て済みは除外
         for (const rule of shopRules) {
@@ -831,6 +832,10 @@ function AutoGenerateTab() {
           if (offType === '休み') continue
           if (offType === '仕込みのみ') {
             if (!fullDayStaff) prepOnlyStaffList.push(staff)
+            continue
+          }
+          if (offType === '営業のみ') {
+            if (!fullDayStaff) eigyoOnlyStaffList.push(staff)
             continue
           }
           fullDayStaff = staff
@@ -846,6 +851,10 @@ function AutoGenerateTab() {
             if (offType === '休み') continue
             if (offType === '仕込みのみ') {
               prepOnlyStaffList.push(staff)
+              continue
+            }
+            if (offType === '営業のみ') {
+              eigyoOnlyStaffList.push(staff)
               continue
             }
             fullDayStaff = staff
@@ -871,6 +880,17 @@ function AutoGenerateTab() {
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: staff.id, staff_name: staff.name,
             type: '仕込み', start_time: t.start, end_time: t.end, note: '仕込みのみ',
+          })
+          assignedToday.add(staff.id)
+        }
+
+        // 営業のみの人の行を追加
+        for (const staff of eigyoOnlyStaffList) {
+          const t = getDefaultTime(shopId, '営業')
+          rows.push({
+            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
+            staff_id: staff.id, staff_name: staff.name,
+            type: '営業', start_time: t.start, end_time: t.end, note: '営業のみ',
           })
           assignedToday.add(staff.id)
         }
@@ -972,13 +992,15 @@ function AutoGenerateTab() {
                 const staffOff = offRequests.filter((r) => r.staff_id === staff.id)
                 const offCount = staffOff.filter((r) => r.type === '休み').length
                 const prepCount = staffOff.filter((r) => r.type === '仕込みのみ').length
+                const eigyoCount = staffOff.filter((r) => r.type === '営業のみ').length
                 return (
                   <div key={staff.id} className="flex items-center justify-between text-sm py-0.5">
                     <span>{staff.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {offCount > 0 && <span className="text-red-600 mr-1">休み {offCount}日</span>}
-                      {prepCount > 0 && <span className="text-amber-600">仕込みのみ {prepCount}日</span>}
-                      {offCount === 0 && prepCount === 0 && <span>未提出</span>}
+                      {prepCount > 0 && <span className="text-amber-600 mr-1">仕込みのみ {prepCount}日</span>}
+                      {eigyoCount > 0 && <span className="text-indigo-600 mr-1">営業のみ {eigyoCount}日</span>}
+                      {offCount === 0 && prepCount === 0 && eigyoCount === 0 && <span>未提出</span>}
                     </span>
                   </div>
                 )
