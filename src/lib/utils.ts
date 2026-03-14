@@ -48,9 +48,12 @@ export function calcWage(start: string, end: string | null, hourlyWage: number):
 }
 
 /**
- * シフト提出対豣期間を取得
- * 1-1日 → 当月16日〜末日
- * 16-末日 → 翌月1日〜15日
+ * 「次の提出締め切りに対応する」シフト対象期間を取得
+ * ※ 「日付を含む期間」ではなく、その日時点での「次の締め切り対象期間」を返す
+ *
+ * 1〜5日   → 当月16日〜末日    （締め切り：当月5日）
+ * 6〜20日  → 翌月1日〜15日     （締め切り：当月20日）
+ * 21〜末日 → 翌月16日〜末日    （締め切り：翌月5日）
  */
 export function getSubmissionPeriod(today: Date): { start: Date; end: Date; deadline: Date } {
   const year = today.getFullYear()

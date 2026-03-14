@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
 import { formatTime, getSubmissionPeriod, calcWage } from '@/lib/utils'
-import { analyzeAllStaffPatterns, StaffPattern } from '@/lib/pattern-analysis'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -119,7 +118,6 @@ function ShiftConfirmTab() {
   const [requests, setRequests] = useState<RequestWithStaff[]>([])
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
-  const [patterns, setPatterns] = useState<Map<number, StaffPattern>>(new Map())
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [confirming, setConfirming] = useState(false)
@@ -755,7 +753,6 @@ function AutoGenerateTab() {
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [allExecutives, setAllExecutives] = useState<Staff[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
-  const [patterns, setPatterns] = useState<Map<number, StaffPattern>>(new Map())
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<GeneratedRow[] | null>(null)
   const [saving, setSaving] = useState(false)
@@ -777,23 +774,13 @@ function AutoGenerateTab() {
     if (staffsRes.data) setAllStaffs(staffsRes.data)
     if (execRes.data) setAllExecutives(execRes.data)
     if (configRes.data) setConfigs(configRes.data)
-    if (staffsRes.data) {
-      const staffIds = staffsRes.data.map((s: Staff) => s.id)
-      analyzeAllStaffPatterns(staffIds).then(p => setPatterns(p))
-    }
     setLoading(false)
   }, [period.start.toISOString(), period.end.toISOString()])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   // デフォルト時間を取得
-  const getPatternTime = (staffId: number, type: '仕込み' | '営業'): { start: string; end: string } | null => {
-      const p = patterns.get(staffId)
-      if (!p || p.totalShifts < 4) return null
-      return { start: p.preferredStartTime + ':00', end: p.preferredEndTime + ':00' }
-    }
-
-    const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
+  const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
     // shift_config の仕込みレコードは default_end_time が仕込み/営業の境界時刻を示す
     // default_start_time と default_end_time が同値の場合はconfig設定不備のため fallback を使用
     const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')

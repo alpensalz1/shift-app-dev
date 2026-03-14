@@ -3,8 +3,21 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftFixed, Staff } from '@/types/database'
+import { ShiftFixed, Staff, WageHistory } from '@/types/database'
 import { calcWage, calcHours, formatTime } from '@/lib/utils'
+
+/** シフト日付に対応した時給を取得（wage_history 参照） */
+function getWageForDate(wageHistories: WageHistory[], staffId: number, date: string): number | null {
+  const records = wageHistories
+    .filter((w) => w.staff_id === staffId)
+    .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
+  for (const r of records) {
+    if (date >= r.effective_from && (!r.effective_to || date <= r.effective_to)) {
+      return r.wage
+    }
+  }
+  return records.length > 0 ? records[records.length - 1].wage : null
+}
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { format, startOfMonth, endOfMonth, getDay } from 'date-fns'
 import { ja } from 'date-fns/locale'
@@ -17,6 +30,7 @@ export default function SalaryPage() {
     setStaff(getStoredStaff())
   }, [])
   const [shifts, setShifts] = useState<ShiftFixed[]>([])
+  const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => format(new Date(), 'yyyy-MM'))
 
@@ -28,15 +42,21 @@ export default function SalaryPage() {
 
     const fetchShifts = async () => {
       setLoading(true)
-      const { data } = await supabase
-        .from('shifts_fixed')
-        .select('*')
-        .eq('staff_id', staff.id)
-        .gte('date', monthStart)
-        .lte('date', monthEnd)
-        .order('date', { ascending: true })
-
-      if (data) setShifts(data)
+      const [shiftRes, wageRes] = await Promise.all([
+        supabase
+          .from('shifts_fixed')
+          .select('*')
+          .eq('staff_id', staff.id)
+          .gte('date', monthStart)
+          .lte('date', monthEnd)
+          .order('date', { ascending: true }),
+        supabase
+          .from('wage_history')
+          .select('*')
+          .eq('staff_id', staff.id),
+      ])
+      if (shiftRes.data) setShifts(shiftRes.data)
+      if (wageRes.data) setWageHistories(wageRes.data)
       setLoading(false)
     }
 
@@ -50,7 +70,9 @@ export default function SalaryPage() {
     let totalHours = 0
 
     shifts.forEach((s) => {
-      totalWage += calcWage(s.start_time, s.end_time, staff.wage)
+      // 過去の時給変更を考慮して該当日の時給を使用
+      const wageAtDate = getWageForDate(wageHistories, staff.id, s.date) ?? staff.wage
+      totalWage += calcWage(s.start_time, s.end_time, wageAtDate)
       totalHours += calcHours(s.start_time, s.end_time)
     })
 
@@ -59,7 +81,7 @@ export default function SalaryPage() {
       totalHours: Math.round(totalHours * 10) / 10,
       shiftCount: new Set(shifts.map(s => s.date)).size,
     }
-  }, [shifts, staff?.wage])
+  }, [shifts, staff?.id, staff?.wage, wageHistories])
 
   const groupedByDate = useMemo(() => {
     const map: Record<string, ShiftFixed[]> = {}
@@ -193,7 +215,10 @@ export default function SalaryPage() {
                   const isSunday = dow === 0
                   const isSaturday = dow === 6
                   const totalWage = Math.floor(
-                    dayShifts.reduce((sum, sh) => sum + calcWage(sh.start_time, sh.end_time, staff.wage || 1000), 0)
+                    dayShifts.reduce((sum, sh) => {
+                      const wageAtDate = getWageForDate(wageHistories, staff.id, dk) ?? (staff.wage || 1000)
+                      return sum + calcWage(sh.start_time, sh.end_time, wageAtDate)
+                    }, 0)
                   )
                   const totalHours = Math.round(
                     dayShifts.reduce((sum, sh) => sum + calcHours(sh.start_time, sh.end_time), 0) * 10

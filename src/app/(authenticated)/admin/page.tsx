@@ -243,9 +243,8 @@ function StaffManagementTab() {
   const handleAddStaff = async () => {
     if (!newName.trim()) return
     const wageNum = parseInt(newWage) || 0
-    const all = (await supabase.from('staffs').select('id').order('id', { ascending: false }).limit(1)).data
-    const nextId = (all?.[0]?.id ?? 0) + 1
-    const token = newName.trim().toLowerCase().replace(/[^a-z]/g, '') + nextId
+    // ランダムなトークンを生成（日本語名でも安全に使えるよう英数字6文字）
+    const token = Math.random().toString(36).slice(2, 8)
 
     const { data: inserted } = await supabase.from('staffs').insert({
       name: newName.trim(), token, employment_type: newType, wage: wageNum, is_active: true, shop_id: 1,
