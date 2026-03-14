@@ -476,7 +476,7 @@ function FulfillmentTab({ month }: { month: string }) {
     dates.forEach(date => {
       if (closedDates.some(cd => cd.date === date && (!cd.shop_id || cd.shop_id === shop.id))) return
       sc.forEach(c => {
-        const r = c.required_employees
+        const r = c.required_count
         const a = shifts.filter(s => s.date === date && s.shop_id === shop.id && s.type === c.type).length
         req += r; fill += Math.min(a, r)
         if (a < r) shortages.push({ date, type: c.type, required: r, actual: a })
@@ -722,9 +722,13 @@ function MonthlyReportTab({ month }: { month: string }) {
       const w = getWageForDate(wH, s.id, sh.date) ?? s.wage
       totalWage += calcWage(sh.start_time, sh.end_time, w)
       totalHours += calcHours(sh.start_time, sh.end_time)
-      const [eH] = (sh.end_time || '24:00').split(':').map(Number)
-      const [sH] = sh.start_time.split(':').map(Number)
-      if (eH > 22 || !sh.end_time) nightH += Math.max(0, Math.min(eH, 24) - Math.max(sH, 22))
+      const endStr = sh.end_time || '24:00'
+      const [eH, eM] = endStr.split(':').map(Number)
+      const [sH, sM] = sh.start_time.split(':').map(Number)
+      const endMin = eH * 60 + eM
+      const startMin = sH * 60 + sM
+      const NIGHT = 22 * 60
+      if (endMin > NIGHT) nightH += Math.max(0, endMin - Math.max(startMin, NIGHT)) / 60
     })
   })
 
