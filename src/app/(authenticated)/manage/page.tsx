@@ -1259,9 +1259,48 @@ export function StaffManagementTab() {
     const parsed = parseInt(wageInput)
     if (isNaN(parsed) || parsed < 0) return
     setUpdating(staff.id)
-    const { error } = await supabase.from('staffs').update({ wage: parsed }).eq('id', staff.id)
-    if (error) setMessage('時給更新失敗: ' + error.message)
-    else { setMessage(staff.name + 'の時給を¥' + parsed + 'に更新しました'); setEditingWage(null); fetchStaffs() }
+    try {
+      const today = new Date()
+      const todayStr = format(today, 'yyyy-MM-dd')
+      const prevDay = format(addDays(today, -1), 'yyyy-MM-dd')
+
+      // 現在有効な wage_history レコードを取得して effective_to をセット
+      const { data: histories, error: fetchErr } = await supabase
+        .from('wage_history')
+        .select('*')
+        .eq('staff_id', staff.id)
+        .is('effective_to', null)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+      if (fetchErr) throw new Error('履歴取得エラー: ' + fetchErr.message)
+
+      if (histories && histories.length > 0) {
+        const { error: updErr } = await supabase
+          .from('wage_history')
+          .update({ effective_to: prevDay })
+          .eq('id', histories[0].id)
+        if (updErr) throw new Error('履歴更新エラー: ' + updErr.message)
+      }
+
+      // 新しい wage_history レコードを挿入
+      const { error: insErr } = await supabase.from('wage_history').insert({
+        staff_id: staff.id,
+        wage: parsed,
+        effective_from: todayStr,
+        effective_to: null,
+      })
+      if (insErr) throw new Error('履歴追加エラー: ' + insErr.message)
+
+      // staffs.wage も更新
+      const { error: wageErr } = await supabase.from('staffs').update({ wage: parsed }).eq('id', staff.id)
+      if (wageErr) throw new Error('時給更新エラー: ' + wageErr.message)
+
+      setMessage(staff.name + 'の時給を¥' + parsed + 'に更新しました')
+      setEditingWage(null)
+      fetchStaffs()
+    } catch (e: any) {
+      setMessage('時給更新失敗: ' + (e.message || ''))
+    }
     setUpdating(null)
   }
 
