@@ -563,6 +563,7 @@ function FullTimeForm({
   const [choices, setChoices] = useState<DayChoiceMap>({})
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const [loadingExisting, setLoadingExisting] = useState(true)
 
   const days = useMemo(
@@ -610,22 +611,29 @@ function FullTimeForm({
 
   async function handleSubmit() {
     setSubmitting(true)
+    setSubmitError('')
     try {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
-      await supabase
+      const { error: delErr } = await supabase
         .from('off_requests')
         .delete()
         .eq('staff_id', staff.id)
         .gte('date', startKey)
         .lte('date', endKey)
+      if (delErr) throw new Error('削除エラー: ' + delErr.message)
       const rows = Object.entries(choices).map(([dk, type]) => ({
         staff_id: staff.id,
         date: dk,
         type,
       }))
-      if (rows.length > 0) await supabase.from('off_requests').insert(rows)
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase.from('off_requests').insert(rows)
+        if (insErr) throw new Error('送信エラー: ' + insErr.message)
+      }
       setDone(true)
+    } catch (e: any) {
+      setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
     } finally {
       setSubmitting(false)
     }
@@ -750,6 +758,13 @@ function FullTimeForm({
           </div>
         ))}
       </div>
+
+      {/* エラーメッセージ */}
+      {submitError && (
+        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </div>
+      )}
 
       {/* 提出ボタン */}
       <Button
