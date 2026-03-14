@@ -377,7 +377,7 @@ function ShiftConfirmTab() {
                   <span className="font-medium">{format(date, 'd')}</span>
                       {isClosed && !isSel && <span className="text-[8px] text-rose-500 font-bold leading-none">休</span>}
                   {!isSel && (() => {
-                    const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size
+                    const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト' || r.staffs.employment_type === '長期').map(r => r.staff_id)).size
                     const socialEmployees = allStaffs.filter(s => s.employment_type === '社員')
                     const offOnDate = offByDate[dateStr] || {}
                     const eC = socialEmployees.filter(s => offOnDate[s.id] !== '休み').length
