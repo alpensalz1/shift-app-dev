@@ -135,6 +135,11 @@ function ShiftConfirmTab() {
     setMessage('')
   }, [monthStart])
 
+  // 日付切替時にメッセージをリセット（前日の確定/却下メッセージが残らないよう）
+  useEffect(() => {
+    setMessage('')
+  }, [selectedDate])
+
   // 月切替時に自動遷移フラグをリセット（再度トリガされるよう）
   useEffect(() => {
     autoAdvancedRef.current = false

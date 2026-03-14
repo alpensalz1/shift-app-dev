@@ -164,22 +164,26 @@ export default function HomePage() {
       setCurrentStaffId(staff.id)
       const partTimer = staff.employment_type === 'アルバイト'
       setIsPartTimer(partTimer)
-      if (partTimer) {
-        const todayStr = format(new Date(), 'yyyy-MM-dd')
-        supabase
-          .from('shift_requests')
-          .select('*')
-          .eq('staff_id', staff.id)
-          .eq('status', 'pending')
-          .gte('date', todayStr)
-          .order('date', { ascending: true })
-          .then(({ data, error }) => {
-            if (error) console.error('承認待ち申請取得失敗:', error.message)
-            else if (data) setPendingRequests(data as ShiftRequest[])
-          })
-      }
     }
   }, [])
+
+  // 承認待ち申請を週切替のたびに再取得（最新状態を反映するため）
+  useEffect(() => {
+    const staff = getStoredStaff()
+    if (!staff || staff.employment_type !== 'アルバイト') return
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    supabase
+      .from('shift_requests')
+      .select('*')
+      .eq('staff_id', staff.id)
+      .eq('status', 'pending')
+      .gte('date', todayStr)
+      .order('date', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.error('承認待ち申請取得失敗:', error.message)
+        else if (data) setPendingRequests(data as ShiftRequest[])
+      })
+  }, [weekStartStr])
 
   useEffect(() => {
     const fetchShifts = async () => {
