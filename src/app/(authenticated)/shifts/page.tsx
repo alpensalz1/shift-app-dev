@@ -1047,7 +1047,7 @@ function StatusView({
                     {dayFixed.length > 0 && dayFixed.map(f => (
                       <p key={f.id} className="text-xs text-emerald-700 flex items-center gap-1">
                         <CheckCircle2 className="h-3 w-3 shrink-0" />
-                        確定: {f.start_time.substring(0,5)}–{f.end_time.substring(0,5)}
+                        確定: {f.start_time.substring(0,5)}–{(f.end_time ?? '24:00:00').substring(0,5)}
                         <span className={`px-1 rounded text-[9px] ${f.type === '仕込み' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{f.type}</span>
                       </p>
                     ))}

@@ -56,8 +56,8 @@ function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
     }
     const entries = Array.from(map.values())
     entries.sort((a, b) => {
-      const aEmp = a[0].staff?.employment_type === '社員'
-      const bEmp = b[0].staff?.employment_type === '社員'
+      const aEmp = a[0].staffs?.employment_type === '社員'
+      const bEmp = b[0].staffs?.employment_type === '社員'
       if (aEmp !== bEmp) return aEmp ? -1 : 1
       return a[0].start_time.localeCompare(b[0].start_time)
     })
@@ -85,7 +85,7 @@ function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
       {/* Staff list */}
       <div className="px-3 pb-2">
         {byStaff.map((staffShifts, i) => {
-          const staff = staffShifts[0].staff
+          const staff = staffShifts[0].staffs
           const isShanin = staff?.employment_type === '社員'
           const isYakuin = staff?.employment_type === '役員'
           const isSystemAdmin = staff?.employment_type === 'システム管理者'
@@ -184,7 +184,7 @@ export default function HomePage() {
         const we = addDays(ws, 6)
         const { data, error } = await supabase
           .from('shifts_fixed')
-          .select('*, staff:staffs(*)')
+          .select('*, staffs(name, employment_type)')
           .gte('date', format(ws, 'yyyy-MM-dd'))
           .lte('date', format(we, 'yyyy-MM-dd'))
         if (error) throw error

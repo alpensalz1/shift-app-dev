@@ -48,7 +48,7 @@ export async function analyzeStaffPattern(staffId: number): Promise<StaffPattern
 
   // æ¬æ¥ãã¨ã®åºå¤ãã¿ã¼ã³åæ
   const dayCount: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
-  const uniqueDates = new Set(pastShifts.map(s => s.date))
+  const uniqueDates = Array.from(new Set(pastShifts.map(s => s.date)))
   for (const d of uniqueDates) {
     const day = getDay(new Date(d + 'T00:00:00'))
     dayCount[day]++

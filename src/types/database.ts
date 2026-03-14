@@ -11,7 +11,7 @@ export interface Staff {
   id: number
   name: string
   token: string
-  employment_type: '社員' | 'アルバイト' | '役員' | 'システム管理者'
+  employment_type: '社員' | 'アルバイト' | '役員' | 'システム管理者' | '長期'
   wage: number
   is_active: boolean
   shop_id: number
@@ -51,7 +51,7 @@ export interface ShiftFixed {
   type: '仕込み' | '営業'
   staff_id: number
   start_time: string
-  end_time: string
+  end_time: string | null
   created_at: string
 }
 
@@ -99,8 +99,7 @@ export interface ShiftRuleWithStaff extends ShiftRule {
 }
 
 export interface ShiftFixedWithStaff extends ShiftFixed {
-  staffs: Pick<Staff, 'name'>
-  shops: Pick<Shop, 'name'>
+  staffs: Pick<Staff, 'name' | 'employment_type'>
 }
 
 export interface ShiftRequestWithStaff extends ShiftRequest {
