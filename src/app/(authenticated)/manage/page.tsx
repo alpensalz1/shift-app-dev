@@ -859,7 +859,7 @@ function AutoGenerateTab() {
     const offMap: Record<number, Record<string, string>> = {}
     offRequests.forEach((r) => {
       if (!offMap[r.staff_id]) offMap[r.staff_id] = {}
-      offMap[r.staff_id][r.date] = r.type
+      offMap[r.staff_id][r.date.substring(0, 10)] = r.type
     })
 
     const staffMap: Record<number, Staff> = {}

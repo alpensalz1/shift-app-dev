@@ -98,6 +98,12 @@ export default function SalaryPage() {
     }
   }, [shifts, staff?.id, staff?.wage, wageHistories])
 
+  // 表示用時給: 選択月の1日時点の時給履歴を参照（現在の時給でなく対象月の時給を表示）
+  const displayWage = useMemo(() => {
+    if (!staff) return null
+    return getWageForDate(wageHistories, staff.id, `${selectedMonth}-01`) ?? staff.wage
+  }, [staff?.id, staff?.wage, wageHistories, selectedMonth])
+
   const groupedByDate = useMemo(() => {
     const map: Record<string, ShiftFixed[]> = {}
     shifts.forEach((sh) => {
@@ -126,7 +132,7 @@ export default function SalaryPage() {
     )
   }
 
-  if (staff.employment_type !== 'アルバイト') {
+  if (staff.employment_type !== 'アルバイト' && staff.employment_type !== '長期') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center gap-4 animate-fade-in">
         <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
@@ -149,7 +155,7 @@ export default function SalaryPage() {
           給与概算
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          時給 <span className="font-bold tabular-nums">¥{staff?.wage?.toLocaleString()}</span>
+          時給 <span className="font-bold tabular-nums">¥{displayWage?.toLocaleString()}</span>
           <span className="mx-1.5 text-muted-foreground/30">|</span>
           22時以降 1.25倍
         </p>

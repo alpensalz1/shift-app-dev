@@ -163,7 +163,7 @@ function LaborCostTab({ month }: { month: string }) {
     const startDate = `${month}-01`
     const endDate = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
     Promise.all([
-      supabase.from('staffs').select('*').eq('employment_type', 'アルバイト'),
+      supabase.from('staffs').select('*').in('employment_type', ['アルバイト', '長期']),
       supabase.from('shifts_fixed').select('*').gte('date', startDate).lte('date', endDate),
       supabase.from('wage_history').select('*'),
     ]).then(([sR, shR, wR]) => {
