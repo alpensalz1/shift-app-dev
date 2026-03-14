@@ -628,6 +628,8 @@ function RulesTab() {
       fetchData()
     } catch (e: any) {
       setMessage('保存に失敗しました: ' + (e.message || ''))
+      // 途中で失敗した場合でもDB実態に合わせてUIを更新する
+      fetchData()
     }
     setSaving(false)
   }
@@ -1141,6 +1143,7 @@ function LaborCostTab() {
   const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
 
   useEffect(() => {
+    let cancelled = false
     const load = async () => {
       setLoading(true)
       const [sRes, fRes, wRes] = await Promise.all([
@@ -1148,12 +1151,17 @@ function LaborCostTab() {
         supabase.from('shifts_fixed').select('*').gte('date', monthStart).lte('date', monthEnd),
         supabase.from('wage_history').select('*'),
       ])
-      if (sRes.data) setStaffs(sRes.data)
-      if (fRes.data) setFixedShifts(fRes.data)
-      if (wRes.data) setWageHistories(wRes.data)
+      if (cancelled) return
+      if (sRes.error) console.error('staffs取得失敗:', sRes.error.message)
+      else if (sRes.data) setStaffs(sRes.data)
+      if (fRes.error) console.error('shifts_fixed取得失敗:', fRes.error.message)
+      else if (fRes.data) setFixedShifts(fRes.data)
+      if (wRes.error) console.error('wage_history取得失敗:', wRes.error.message)
+      else if (wRes.data) setWageHistories(wRes.data)
       setLoading(false)
     }
     load()
+    return () => { cancelled = true }
   }, [monthStart, monthEnd])
 
   const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
@@ -1345,6 +1353,8 @@ function StaffManagementTab() {
       fetchStaffs()
     } catch (e: any) {
       setMessage('時給更新失敗: ' + (e.message || ''))
+      // 途中で失敗した場合でもDB実態に合わせてUIを更新する
+      fetchStaffs()
     }
     setUpdating(null)
   }
