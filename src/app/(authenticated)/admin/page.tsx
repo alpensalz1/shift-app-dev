@@ -619,6 +619,7 @@ function ClosedDatesTab() {
   const [newShopId, setNewShopId] = useState('')
   const [newNote, setNewNote] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   const fetch_ = useCallback(async () => {
     const [cR, sR] = await Promise.all([
@@ -635,10 +636,12 @@ function ClosedDatesTab() {
   useEffect(() => { fetch_() }, [fetch_])
 
   const handleAdd = async () => {
-    if (!newDate) return
+    if (!newDate || saving) return
+    setSaving(true)
     const { error } = await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
-    if (error) { alert('休業日追加に失敗しました: ' + error.message); return }
+    if (error) { alert('休業日追加に失敗しました: ' + error.message); setSaving(false); return }
     setNewDate(fmtDate(new Date())); setNewNote(''); setNewShopId('')
+    setSaving(false)
     fetch_()
   }
 
@@ -681,7 +684,7 @@ function ClosedDatesTab() {
           <Input placeholder="備考（例：臨時休業）" value={newNote} onChange={e => setNewNote(e.target.value)} className="bg-white/80 border-purple-200/50 text-sm h-9" />
           <button
             onClick={handleAdd}
-            disabled={!newDate}
+            disabled={!newDate || saving}
             className="w-full h-9 rounded-lg bg-purple-600 text-white text-xs font-bold transition-all hover:bg-purple-700 disabled:opacity-40 press-effect flex items-center justify-center gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" />休業日を登録
