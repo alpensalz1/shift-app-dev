@@ -305,8 +305,8 @@ function StaffManagementTab() {
     const nw = parseInt(editingWage.wage)
     if (!nw || !editingWage.effectiveFrom) return
 
-    const prev = new Date(editingWage.effectiveFrom)
-    prev.setDate(prev.getDate() - 1)
+    const [ey, em, ed] = editingWage.effectiveFrom.split('-').map(Number)
+    const prev = new Date(ey, em - 1, ed - 1)
     try {
       const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
       if (latest) {
