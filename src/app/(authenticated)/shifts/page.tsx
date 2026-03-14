@@ -876,9 +876,9 @@ function StatusView({
     [fixedShifts]
   )
 
-  // 日付ごとのステータスを計算
+  // 日付ごとのステータスを計算（partial = 一部確定）
   const statusMap = useMemo(() => {
-    const map: Record<string, 'confirmed' | 'pending' | 'rejected'> = {}
+    const map: Record<string, 'confirmed' | 'partial' | 'pending' | 'rejected'> = {}
     existingRequests.forEach((r) => {
       const dk = r.date.substring(0, 10)
       if (fixedDates.has(dk)) {
@@ -892,7 +892,18 @@ function StatusView({
     return map
   }, [existingRequests, fixedDates])
 
-  const confirmedCount = Object.values(statusMap).filter((s) => s === 'confirmed').length
+  // 日付ごとの確定シフト
+  const fixedByDate = useMemo(() => {
+    const map: Record<string, ShiftFixed[]> = {}
+    fixedShifts.forEach((f) => {
+      const dk = f.date.substring(0, 10)
+      if (!map[dk]) map[dk] = []
+      map[dk].push(f)
+    })
+    return map
+  }, [fixedShifts])
+
+  const confirmedCount = Object.values(statusMap).filter((s) => s === 'confirmed' || s === 'partial').length
   const pendingCount = Object.values(statusMap).filter((s) => s === 'pending').length
   const rejectedCount = Object.values(statusMap).filter((s) => s === 'rejected').length
 
@@ -937,9 +948,12 @@ function StatusView({
 
       {/* ステータスカレンダー */}
       <div className="bg-white rounded-2xl ring-1 ring-border/40 shadow-sm overflow-hidden">
-        <div className="px-4 py-2 border-b border-border/30 flex items-center gap-4 text-[10px] text-muted-foreground">
+        <div className="px-4 py-2 border-b border-border/30 flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" /> 確定
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 inline-block" /> 一部確定
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" /> 承認待ち
@@ -964,8 +978,9 @@ function StatusView({
                 : null
               const bgClass =
                 status === 'confirmed' ? 'bg-emerald-400 text-white shadow-sm'
-                : status === 'pending'   ? 'bg-amber-400 text-white shadow-sm'
-                : status === 'rejected'  ? 'bg-red-400 text-white shadow-sm'
+                : status === 'partial'  ? 'bg-emerald-300 text-white shadow-sm'
+                : status === 'pending'  ? 'bg-amber-400 text-white shadow-sm'
+                : status === 'rejected' ? 'bg-red-400 text-white shadow-sm'
                 : dow === 0 ? 'text-red-300'
                 : dow === 6 ? 'text-blue-300'
                 : 'text-muted-foreground/30'
@@ -999,25 +1014,43 @@ function StatusView({
               const status = statusMap[dk] ?? 'pending'
               const d = new Date(dk + 'T00:00:00')
               const label = format(d, 'M月d日(E)', { locale: ja })
+              const dayFixed = fixedByDate[dk] || []
+              const reqTime = `${row.start_time.substring(0, 5)}–${row.end_time.substring(0, 5)}`
+              // 確定シフトが申請時間と異なるか判定
+              const isPartial = dayFixed.length > 0 && dayFixed.length < 2 && row.type === '仕込み・営業'
               return (
                 <div
                   key={row.id}
-                  className="flex items-center justify-between py-2 border-b border-border/30 last:border-0"
+                  className="py-2.5 border-b border-border/30 last:border-0"
                 >
-                  <span className="text-sm font-medium text-foreground">{label}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {row.start_time.substring(0, 5)} – {row.end_time.substring(0, 5)}
-                    </span>
-                    {status === 'confirmed' && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">確定</span>
-                    )}
-                    {status === 'pending' && (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">承認待ち</span>
-                    )}
-                    {status === 'rejected' && (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">却下</span>
-                    )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">{label}</span>
+                    <div className="flex items-center gap-2">
+                      {(status === 'confirmed' || status === 'partial') && !isPartial && (
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">確定</span>
+                      )}
+                      {isPartial && (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-300 px-2 py-0.5 text-xs font-semibold text-emerald-700">一部確定</span>
+                      )}
+                      {status === 'pending' && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">承認待ち</span>
+                      )}
+                      {status === 'rejected' && (
+                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">却下</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 space-y-0.5">
+                    <p className="text-xs text-muted-foreground">
+                      申請: {reqTime}
+                    </p>
+                    {dayFixed.length > 0 && dayFixed.map(f => (
+                      <p key={f.id} className="text-xs text-emerald-700 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 shrink-0" />
+                        確定: {f.start_time.substring(0,5)}–{f.end_time.substring(0,5)}
+                        <span className={`px-1 rounded text-[9px] ${f.type === '仕込み' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{f.type}</span>
+                      </p>
+                    ))}
                   </div>
                 </div>
               )

@@ -126,6 +126,7 @@ function ShiftConfirmTab() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [closedDates, setClosedDates] = useState<string[]>([])
+  const [offRequests, setOffRequests] = useState<OffRequest[]>([])
   const autoAdvancedRef = useRef(false)
 
   const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
@@ -133,7 +134,7 @@ function ShiftConfirmTab() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [reqRes, fixedRes, configRes, staffRes, closedRes] = await Promise.all([
+    const [reqRes, fixedRes, configRes, staffRes, closedRes, offRes] = await Promise.all([
       supabase.from('shift_requests').select('*, staffs(name, employment_type)')
         .gte('date', monthStart).lte('date', monthEnd).order('date', { ascending: true }),
       supabase.from('shifts_fixed').select('*')
@@ -141,12 +142,14 @@ function ShiftConfirmTab() {
       supabase.from('shift_config').select('*'),
       supabase.from('staffs').select('*').eq('is_active', true),
       supabase.from('closed_dates').select('date').gte('date', monthStart).lte('date', monthEnd),
+      supabase.from('off_requests').select('*').gte('date', monthStart).lte('date', monthEnd),
     ])
     if (reqRes.data) setRequests(reqRes.data as RequestWithStaff[])
     if (fixedRes.data) setFixedShifts(fixedRes.data)
     if (configRes.data) setConfigs(configRes.data)
     if (staffRes.data) setAllStaffs(staffRes.data)
     if (closedRes.data) setClosedDates(closedRes.data.map((c: {date: string}) => c.date))
+    if (offRes.data) setOffRequests(offRes.data as OffRequest[])
     setLoading(false)
   }, [monthStart, monthEnd])
 
@@ -177,6 +180,17 @@ function ShiftConfirmTab() {
     return map
   }, [fixedShifts])
 
+  // 日付ごとの社員off申請マップ（dateStr -> staffId -> type）
+  const offByDate = useMemo(() => {
+    const map: Record<string, Record<number, string>> = {}
+    offRequests.forEach((r) => {
+      const dk = r.date.substring(0, 10)
+      if (!map[dk]) map[dk] = {}
+      map[dk][r.staff_id] = r.type
+    })
+    return map
+  }, [offRequests])
+
   const calDays = useMemo(
     () => eachDayOfInterval({ start: startOfMonth(selectedMonth), end: endOfMonth(selectedMonth) }),
     [selectedMonth.toISOString()]
@@ -204,7 +218,6 @@ function ShiftConfirmTab() {
 
   const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2, 'システム管理者': 3 }
   const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
-    .filter((r) => r.status !== 'rejected')
     .slice()
     .sort((a, b) => (typeOrder[a.staffs.employment_type] ?? 1) - (typeOrder[b.staffs.employment_type] ?? 1))
   const selectedFixed = selectedDate ? (fixedMap[selectedDate] || []) : []
@@ -227,19 +240,20 @@ function ShiftConfirmTab() {
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
     setConfirming(true)
     setMessage('')
-    // 店舗別時間境界バリデーション
-    const vResult = validateShiftTime(configs, shopId, type, req.start_time, req.end_time)
-    if (!vResult.valid) {
-      setMessage(vResult.message)
+    // 店舗config境界で申請時間を分割し、対象typeの時間帯のみ確定（shift_requestsは変更しない）
+    const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs)
+    const split = splits.find(s => s.type === type)
+    if (!split) {
+      setMessage(`この申請時間帯は${type}に対応していません`)
       setConfirming(false)
       return
     }
     const { error } = await supabase.from('shifts_fixed').upsert({
       date: req.date, shop_id: shopId, type,
-      staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time,
+      staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
     }, { onConflict: 'staff_id,date,type' })
     if (error) setMessage('確定に失敗: ' + error.message)
-    else { setMessage(`${req.staffs.name}のシフトを確定しました`); fetchAll() }
+    else { setMessage(`${req.staffs.name}のシフトを確定しました（${SHOP_NAMES[shopId]} / ${type}）`); fetchAll() }
     setConfirming(false)
   }
 
@@ -278,11 +292,19 @@ function ShiftConfirmTab() {
   }
 
   const handleReject = async (req: RequestWithStaff) => {
-    if (!window.confirm(`${req.staffs.name}（${req.date}）のシフト希望を却下しますか？`)) return
     setConfirming(true)
     const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
     if (error) setMessage('却下に失敗: ' + error.message)
     else { setMessage(`${req.staffs.name}のシフトを却下しました`); fetchAll() }
+    setConfirming(false)
+  }
+
+  // 却下された申請を申請中（pending）に戻す
+  const handleRestore = async (req: RequestWithStaff) => {
+    setConfirming(true)
+    const { error } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('id', req.id)
+    if (error) setMessage('復元に失敗: ' + error.message)
+    else { setMessage(`${req.staffs.name}のシフト申請を申請中に戻しました`); fetchAll() }
     setConfirming(false)
   }
 
@@ -313,10 +335,13 @@ function ShiftConfirmTab() {
   const setClosedDay = async (dateStr: string) => {
     const alreadyClosed = closedDates.includes(dateStr)
     if (alreadyClosed) {
+      // 定休日解除: closed_datesから削除 + shift_requestsをpendingに戻す
       await supabase.from('closed_dates').delete().eq('date', dateStr)
+      await supabase.from('shift_requests').update({ status: 'pending' }).eq('date', dateStr).eq('status', 'rejected')
     } else {
+      // 定休日設定: closed_datesに追加 + shift_requestsをrejectedに変更（削除しない）
       await supabase.from('closed_dates').insert({ date: dateStr })
-      await supabase.from('shift_requests').delete().eq('date', dateStr)
+      await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr)
     }
     await fetchAll()
   }
@@ -372,7 +397,17 @@ function ShiftConfirmTab() {
                   `}>
                   <span className="font-medium">{format(date, 'd')}</span>
                       {isClosed && !isSel && <span className="text-[8px] text-rose-500 font-bold leading-none">休</span>}
-                  {reqs.length > 0 && !isSel && (() => { const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size; const eC = new Set(reqs.filter(r => r.staffs.employment_type !== 'アルバイト').map(r => r.staff_id)).size; return <span className="text-[8px] leading-tight text-amber-600 flex flex-col">{aC > 0 && <span>アルバイト{aC}名希望</span>}{eC > 0 && <span>社员{eC}名希望</span>}</span> })()}
+                  {!isSel && (() => {
+                    const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size
+                    const socialEmployees = allStaffs.filter(s => s.employment_type === '社員')
+                    const offOnDate = offByDate[dateStr] || {}
+                    const eC = socialEmployees.filter(s => offOnDate[s.id] !== '休み').length
+                    if (aC === 0 && eC === 0) return null
+                    return <span className="text-[8px] leading-tight text-amber-600 flex flex-col">
+                      {aC > 0 && <span>バイト{aC}名</span>}
+                      {eC > 0 && <span>社員{eC}名</span>}
+                    </span>
+                  })()}
                   {fixed.length > 0 && !isSel && <span className="text-[8px] leading-tight text-emerald-600">{new Set(fixed.map(f => f.staff_id)).size}名確定</span>}
                 </button>
               )
@@ -391,12 +426,6 @@ function ShiftConfirmTab() {
             <CardTitle className="text-sm flex items-center justify-between">
               <span>{format(new Date(selectedDate + 'T00:00:00'), 'M月d日（E）', { locale: ja })}</span>
               <span className="text-xs font-normal text-muted-foreground">希望 {selectedRequests.length}名 / 確定 {selectedFixed.length}名</span>
-              <button
-                onClick={() => setClosedDay(selectedDate!)}
-                className={`text-xs px-2 py-0.5 rounded-full border transition-all ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
-              >
-                {closedDates.includes(selectedDate!) ? '定休日解除' : '定休日に設定'}
-              </button>
               <button
                 onClick={() => setClosedDay(selectedDate!)}
                 className={`text-xs px-2 py-0.5 rounded-full border transition-all ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
@@ -460,9 +489,11 @@ function ShiftConfirmTab() {
                 </h4>
                 <div className="space-y-2">
                   {selectedRequests.map((req) => {
+                    const isRejected = req.status === 'rejected'
                     const alreadyFixed = selectedFixed.some((f) => f.staff_id === req.staff_id)
+                    const fixedForStaff = selectedFixed.filter(f => f.staff_id === req.staff_id)
                     return (
-                      <div key={req.id} className={`p-3 rounded-lg border ${alreadyFixed ? 'bg-muted/50 opacity-60' : 'bg-background'}`}>
+                      <div key={req.id} className={`p-3 rounded-lg border ${isRejected ? 'bg-red-50 border-red-200 opacity-70' : alreadyFixed ? 'bg-emerald-50/50 border-emerald-200' : 'bg-background'}`}>
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">{req.staffs.name}</span>
@@ -471,17 +502,32 @@ function ShiftConfirmTab() {
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            {alreadyFixed
-                              ? <span className="text-xs text-emerald-600 flex items-center gap-0.5"><Check className="h-3 w-3" /> 確定済</span>
+                            {isRejected
+                              ? <span className="inline-flex items-center rounded-full bg-red-100 text-red-800 text-[10px] px-1.5 py-0.5 font-semibold">却下</span>
+                              : alreadyFixed
+                              ? <span className="text-xs text-emerald-600 flex items-center gap-0.5"><Check className="h-3 w-3" /> 一部/全確定</span>
                               : <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 font-semibold">承認待ち</span>
                             }
                           </div>
                         </div>
                         <div className="text-xs text-muted-foreground mb-2">
-                          {formatTime(req.start_time)}–{formatTime(req.end_time)} / {req.type}
+                          申請: {formatTime(req.start_time)}–{formatTime(req.end_time)} / {req.type}
                           {req.note && <span className="ml-2 text-amber-600">※ {req.note}</span>}
                         </div>
-                        {!alreadyFixed && (
+                        {/* 確定済みシフトの詳細表示 */}
+                        {fixedForStaff.length > 0 && (
+                          <div className="text-xs text-emerald-700 mb-2 flex flex-wrap gap-1">
+                            {fixedForStaff.map(f => (
+                              <span key={f.id} className="inline-flex items-center gap-0.5 bg-emerald-100 rounded-full px-2 py-0.5">
+                                <Check className="h-2.5 w-2.5" />
+                                {SHOP_NAMES[f.shop_id]} {f.type} {formatTime(f.start_time)}–{formatTime(f.end_time)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {isRejected ? (
+                          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleRestore(req)}>申請に戻す</Button>
+                        ) : (
                           <div className="flex gap-2 flex-wrap">
                             {(req.type === '仕込み' || req.type === '仕込み・営業') && (
                               <>
@@ -541,7 +587,7 @@ function RulesTab() {
     setLoading(true)
     const [rulesRes, staffsRes] = await Promise.all([
       supabase.from('shift_rules').select('*, staffs(name)').order('shop_id').order('priority'),
-      supabase.from('staffs').select('*').eq('is_active', true).in('employment_type', ['社員', '役員']),
+      supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
     ])
     if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
     if (staffsRes.data) {
@@ -710,7 +756,9 @@ function AutoGenerateTab() {
   const [rules, setRules] = useState<RuleWithStaff[]>([])
   const [offRequests, setOffRequests] = useState<OffRequest[]>([])
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
+  const [allExecutives, setAllExecutives] = useState<Staff[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
+  const [patterns, setPatterns] = useState<Map<number, StaffPattern>>(new Map())
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<GeneratedRow[] | null>(null)
   const [saving, setSaving] = useState(false)
@@ -720,15 +768,17 @@ function AutoGenerateTab() {
     setLoading(true)
     const periodStart = format(period.start, 'yyyy-MM-dd')
     const periodEnd = format(period.end, 'yyyy-MM-dd')
-    const [rulesRes, offRes, staffsRes, configRes] = await Promise.all([
+    const [rulesRes, offRes, staffsRes, execRes, configRes] = await Promise.all([
       supabase.from('shift_rules').select('*, staffs(name)').eq('is_active', true).order('shop_id').order('priority'),
       supabase.from('off_requests').select('*').gte('date', periodStart).lte('date', periodEnd),
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
+      supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '役員'),
       supabase.from('shift_config').select('*'),
     ])
     if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
     if (offRes.data) setOffRequests(offRes.data as OffRequest[])
     if (staffsRes.data) setAllStaffs(staffsRes.data)
+    if (execRes.data) setAllExecutives(execRes.data)
     if (configRes.data) setConfigs(configRes.data)
     if (staffsRes.data) {
       const staffIds = staffsRes.data.map((s: Staff) => s.id)
@@ -752,91 +802,104 @@ function AutoGenerateTab() {
     return type === '仕込み' ? { start: '09:00:00', end: '17:00:00' } : { start: '17:00:00', end: '24:00:00' }
   }
 
-  // 自動生成ロジック
+  // 自動生成ロジック（優先: ルール設定社員 → ルール外社員 → 役員（均等）→ 空欄）
   const generateShifts = () => {
     const dates = eachDayOfInterval({ start: period.start, end: period.end })
     const rows: GeneratedRow[] = []
 
     // offMap: staff_id -> date -> type
-    const offMap: Record<number, Record<string, '休み' | '仕込みのみ'>> = {}
+    const offMap: Record<number, Record<string, string>> = {}
     offRequests.forEach((r) => {
       if (!offMap[r.staff_id]) offMap[r.staff_id] = {}
-      offMap[r.staff_id][r.date] = r.type as '休み' | '仕込みのみ'
+      offMap[r.staff_id][r.date] = r.type
     })
 
     const staffMap: Record<number, Staff> = {}
     allStaffs.forEach((s) => { staffMap[s.id] = s })
 
+    // 役員シフト数トラッカー（均等配置用）
+    const execShiftCount: Record<number, number> = {}
+    allExecutives.forEach(s => { execShiftCount[s.id] = 0 })
+
     for (const date of dates) {
       const dateStr = format(date, 'yyyy-MM-dd')
 
-      for (const shopId of [1, 2]) {
+      for (const shopId of [1, 2] as const) {
         const shopRules = rules
           .filter((r) => r.shop_id === shopId)
           .sort((a, b) => a.priority - b.priority)
 
-        // 仕込みのみの人と、フル出勤の人を分けて探す
-        let fullDayStaff: RuleWithStaff | null = null
-        const prepOnlyStaffs: RuleWithStaff[] = []
+        const shopRuledIds = new Set(shopRules.map(r => r.staff_id))
 
+        let fullDayStaff: Staff | null = null
+        const prepOnlyStaffList: Staff[] = []
+
+        // Tier1: ルール設定社員（優先順に）
         for (const rule of shopRules) {
+          const staff = staffMap[rule.staff_id]
+          if (!staff) continue
           const offType = offMap[rule.staff_id]?.[dateStr]
           if (offType === '休み') continue
           if (offType === '仕込みのみ') {
-            prepOnlyStaffs.push(rule)
+            if (!fullDayStaff) prepOnlyStaffList.push(staff)
             continue
           }
-          // available for full day
-          if (!fullDayStaff) {
-            fullDayStaff = rule
+          fullDayStaff = staff
+          break
+        }
+
+        // Tier2: ルール設定外の社員
+        if (!fullDayStaff) {
+          for (const staff of allStaffs) {
+            if (shopRuledIds.has(staff.id)) continue
+            const offType = offMap[staff.id]?.[dateStr]
+            if (offType === '休み') continue
+            if (offType === '仕込みのみ') {
+              prepOnlyStaffList.push(staff)
+              continue
+            }
+            fullDayStaff = staff
             break
           }
         }
 
-        // フル出勤の人が見つかった場合は仕込みのみの人より先に
-        // 実際にはprepOnlyの人はfullDayの前に来を可能性もあるが、
-        // fullDayが確定したらprepOnlyは打ち切り
-        const prepOnlyBeforeFull = prepOnlyStaffs.filter((p) => {
-          if (!fullDayStaff) return true
-          return p.priority < fullDayStaff.priority
-        })
+        // Tier3: 役員（最もシフト数が少ない人を優先）
+        if (!fullDayStaff && allExecutives.length > 0) {
+          const available = allExecutives.filter(s => offMap[s.id]?.[dateStr] !== '休み')
+          if (available.length > 0) {
+            available.sort((a, b) => (execShiftCount[a.id] ?? 0) - (execShiftCount[b.id] ?? 0))
+            fullDayStaff = available[0]
+          }
+        }
 
-        // 仕込みのみの人つち (仕込みシフトはみ)
-        for (const rule of prepOnlyBeforeFull) {
-          const staff = staffMap[rule.staff_id]
-          if (!staff) continue
-          const t = getPatternTime(rule.staff_id, '仕込み') || getDefaultTime(shopId, '仕込み')
+        // 仕込みのみの人の行を追加
+        for (const staff of prepOnlyStaffList) {
+          const t = getPatternTime(staff.id, '仕込み') || getDefaultTime(shopId, '仕込み')
           rows.push({
-            date: dateStr,
-            shop_id: shopId,
-            shop_name: SHOP_NAMES[shopId],
-            staff_id: staff.id,
-            staff_name: staff.name,
-            type: '仕込み',
-            start_time: t.start,
-            end_time: t.end,
-            note: '仕込みのみ',
+            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
+            staff_id: staff.id, staff_name: staff.name,
+            type: '仕込み', start_time: t.start, end_time: t.end, note: '仕込みのみ',
           })
         }
 
-        // フル出勤の人 (仕込み+営業 = 2行)
+        // フル出勤の人（仕込み+営業 = 2行）
         if (fullDayStaff) {
-          const staff = staffMap[fullDayStaff.staff_id]
-          if (staff) {
-            const t1 = getPatternTime(fullDayStaff.staff_id, '仕込み') || getDefaultTime(shopId, '仕込み')
-            const t2 = getPatternTime(fullDayStaff.staff_id, '営業') || getDefaultTime(shopId, '営業')
-            rows.push({
-              date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-              staff_id: staff.id, staff_name: staff.name,
-              type: '仕込み', start_time: t1.start, end_time: t1.end, note: '',
-            })
-            rows.push({
-              date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-              staff_id: staff.id, staff_name: staff.name,
-              type: '営業', start_time: t2.start, end_time: t2.end, note: '',
-            })
-          }
+          const isExec = fullDayStaff.employment_type === '役員'
+          if (isExec) execShiftCount[fullDayStaff.id] = (execShiftCount[fullDayStaff.id] ?? 0) + 1
+          const t1 = getPatternTime(fullDayStaff.id, '仕込み') || getDefaultTime(shopId, '仕込み')
+          const t2 = getPatternTime(fullDayStaff.id, '営業') || getDefaultTime(shopId, '営業')
+          rows.push({
+            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
+            staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
+            type: '仕込み', start_time: t1.start, end_time: t1.end, note: isExec ? '役員' : '',
+          })
+          rows.push({
+            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
+            staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
+            type: '営業', start_time: t2.start, end_time: t2.end, note: isExec ? '役員' : '',
+          })
         }
+        // 埋まらない場合は空欄（エラーなし）
       }
     }
 
