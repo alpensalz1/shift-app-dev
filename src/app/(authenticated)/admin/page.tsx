@@ -326,6 +326,8 @@ function StaffManagementTab() {
       fetchData()
     } catch (e: any) {
       alert('時給変更に失敗しました: ' + (e.message || ''))
+      // 失敗後もDB実態に合わせてUIを更新する
+      fetchData()
     } finally {
       setSaving(false)
     }
