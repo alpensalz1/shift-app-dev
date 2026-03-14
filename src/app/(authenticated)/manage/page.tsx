@@ -169,17 +169,28 @@ function ShiftConfirmTab() {
 
   // 前半/後半確定状態
   const halfStatus = useMemo(() => {
-    // 既に確定済みの申請を除外した「真の未処理」カウント
-    const fixedKeys = new Set(fixedShifts.map(f => f.staff_id + '_' + f.date))
+    // スタッフ×日付ごとの確定済みシフト種別セット（仕込み・営業申請の部分確定検出に使用）
+    const fixedTypesByKey: Record<string, Set<string>> = {}
+    fixedShifts.forEach(f => {
+      const key = f.staff_id + '_' + f.date
+      if (!fixedTypesByKey[key]) fixedTypesByKey[key] = new Set()
+      fixedTypesByKey[key].add(f.type)
+    })
+    // 仕込み・営業申請は両方確定されて初めて「完全確定済み」とみなす
+    const isFullyConfirmed = (r: RequestWithStaff) => {
+      const types = fixedTypesByKey[r.staff_id + '_' + r.date] ?? new Set<string>()
+      if (r.type === '仕込み・営業') return types.has('仕込み') && types.has('営業')
+      return types.has(r.type)
+    }
     const pF = requests.filter(r =>
       parseInt(r.date.slice(8,10)) <= 15 &&
       r.status !== 'rejected' &&
-      !fixedKeys.has(r.staff_id + '_' + r.date)
+      !isFullyConfirmed(r)
     ).length
     const pS = requests.filter(r =>
       parseInt(r.date.slice(8,10)) >= 16 &&
       r.status !== 'rejected' &&
-      !fixedKeys.has(r.staff_id + '_' + r.date)
+      !isFullyConfirmed(r)
     ).length
     const fF = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) <= 15).map(f => f.staff_id)).size
     const fS = new Set(fixedShifts.filter(f => parseInt(f.date.slice(8,10)) >= 16).map(f => f.staff_id)).size
@@ -334,7 +345,14 @@ function ShiftConfirmTab() {
             {calDays.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd')
               const reqs = (dateMap[dateStr] || []).filter(r => r.status !== 'rejected')
-              const pendingReqs = reqs.filter(r => !(fixedMap[dateStr] || []).some(f => f.staff_id === r.staff_id))
+              const pendingReqs = reqs.filter(r => {
+                const staffFixed = (fixedMap[dateStr] || []).filter(f => f.staff_id === r.staff_id)
+                // 仕込み・営業申請は両方確定されていて初めて「処理済み」とみなす
+                if (r.type === '仕込み・営業') {
+                  return !(staffFixed.some(f => f.type === '仕込み') && staffFixed.some(f => f.type === '営業'))
+                }
+                return !staffFixed.some(f => f.type === r.type)
+              })
               const fixed = fixedMap[dateStr] || []
               const isClosed = closedDates.includes(dateStr)
               const isSel = selectedDate === dateStr
