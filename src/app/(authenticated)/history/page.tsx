@@ -55,9 +55,10 @@ export default function HistoryPage() {
       .gte('date', monthStart)
       .lte('date', monthEnd)
       .order('date', { ascending: true })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (!cancelled) {
-          setShifts(data ?? [])
+          if (error) console.error('shifts_fixed取得失敗:', error.message)
+          else setShifts(data ?? [])
           setLoading(false)
         }
       })

@@ -292,7 +292,9 @@ function PartTimerForm({
         supabase.from('shifts_fixed').select('*')
           .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
       ])
-      if (reqRes.data && reqRes.data.length > 0) {
+      if (reqRes.error) {
+        setSubmitError('データ読み込みに失敗しました: ' + reqRes.error.message)
+      } else if (reqRes.data && reqRes.data.length > 0) {
         const map: Record<string, DayTimeEntry> = {}
         reqRes.data.forEach((r: ShiftRequest) => {
           map[r.date.substring(0, 10)] = {
@@ -304,7 +306,7 @@ function PartTimerForm({
         setExistingRequests(reqRes.data)
         setViewMode('status')
       }
-      if (fixedRes.data) setFixedShifts(fixedRes.data)
+      if (!fixedRes.error && fixedRes.data) setFixedShifts(fixedRes.data)
       setLoadingExisting(false)
     }
     load()
@@ -354,6 +356,8 @@ function PartTimerForm({
         supabase.from('shifts_fixed').select('*')
           .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
       ])
+      if (reqRes2.error) throw new Error('再読込エラー: ' + reqRes2.error.message)
+      if (fixedRes2.error) throw new Error('再読込エラー: ' + fixedRes2.error.message)
       setExistingRequests(reqRes2.data || [])
       setFixedShifts(fixedRes2.data || [])
       setViewMode('status')
@@ -575,13 +579,15 @@ function FullTimeForm({
   // 既存の off_requests を読み込む
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('off_requests')
         .select('*')
         .eq('staff_id', staff.id)
         .gte('date', fmtKey(periodStart))
         .lte('date', fmtKey(periodEnd))
-      if (data && data.length > 0) {
+      if (error) {
+        setSubmitError('データ読み込みに失敗しました: ' + error.message)
+      } else if (data && data.length > 0) {
         const c: DayChoiceMap = {}
         data.forEach((r: OffRequest) => {
           c[r.date.substring(0, 10)] = r.type as DayChoice

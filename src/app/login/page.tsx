@@ -423,8 +423,9 @@ export default function LoginPage() {
       .select('name')
       .eq('is_active', true)
       .order('id', { ascending: true })
-      .then(({ data }) => {
-        if (data) setStaffNames(data.map((s) => s.name).filter((n) => n !== 'いっさ'))
+      .then(({ data, error }) => {
+        if (error) console.error('スタッフ名取得失敗:', error.message)
+        else if (data) setStaffNames(data.map((s) => s.name).filter((n) => n !== 'いっさ'))
         setNamesLoading(false)
       })
   }, [])

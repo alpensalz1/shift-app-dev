@@ -236,8 +236,10 @@ function StaffManagementTab() {
       supabase.from('staffs').select('*').is('deleted_at', null).order('id'),
       supabase.from('wage_history').select('*').order('effective_from', { ascending: false }),
     ])
-    setStaffs(sR.data || [])
-    setWageHistories(wR.data || [])
+    if (sR.error) console.error('staffs取得失敗:', sR.error.message)
+    else setStaffs(sR.data || [])
+    if (wR.error) console.error('wage_history取得失敗:', wR.error.message)
+    else setWageHistories(wR.data || [])
     setLoading(false)
   }, [])
 
@@ -590,8 +592,10 @@ function ClosedDatesTab() {
       supabase.from('closed_dates').select('*').order('date', { ascending: false }),
       supabase.from('shops').select('*'),
     ])
-    setClosedDates(cR.data || [])
-    setShops(sR.data || [])
+    if (cR.error) console.error('closed_dates取得失敗:', cR.error.message)
+    else setClosedDates(cR.data || [])
+    if (sR.error) console.error('shops取得失敗:', sR.error.message)
+    else setShops(sR.data || [])
     setLoading(false)
   }, [])
 

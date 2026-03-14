@@ -173,7 +173,10 @@ export default function HomePage() {
           .eq('status', 'pending')
           .gte('date', todayStr)
           .order('date', { ascending: true })
-          .then(({ data }) => { if (data) setPendingRequests(data as ShiftRequest[]) })
+          .then(({ data, error }) => {
+            if (error) console.error('承認待ち申請取得失敗:', error.message)
+            else if (data) setPendingRequests(data as ShiftRequest[])
+          })
       }
     }
   }, [])
