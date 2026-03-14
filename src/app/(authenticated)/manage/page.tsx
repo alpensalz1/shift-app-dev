@@ -585,17 +585,19 @@ function RulesTab() {
       for (const staff of allStaffs) {
         const shopId = assignments[staff.id] ?? 0
         // 既存ルールを削除して新しい配属を挿入
-        await supabase.from('shift_rules').delete().eq('staff_id', staff.id)
+        const { error: delErr } = await supabase.from('shift_rules').delete().eq('staff_id', staff.id)
+        if (delErr) throw new Error('削除エラー: ' + delErr.message)
         if (shopId > 0) {
-          await supabase.from('shift_rules').insert({
+          const { error: insErr } = await supabase.from('shift_rules').insert({
             shop_id: shopId, staff_id: staff.id, priority: 1, is_active: true,
           })
+          if (insErr) throw new Error('登録エラー: ' + insErr.message)
         }
       }
       setMessage('配属設定を保存しました')
       fetchData()
-    } catch {
-      setMessage('保存に失敗しました')
+    } catch (e: any) {
+      setMessage('保存に失敗しました: ' + (e.message || ''))
     }
     setSaving(false)
   }
