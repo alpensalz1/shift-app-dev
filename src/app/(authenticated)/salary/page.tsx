@@ -40,8 +40,9 @@ export default function SalaryPage() {
     if (!staff) return
     let cancelled = false
 
-    const monthStart = format(startOfMonth(new Date(selectedMonth + '-01')), 'yyyy-MM-dd')
-    const monthEnd = format(endOfMonth(new Date(selectedMonth + '-01')), 'yyyy-MM-dd')
+    const [sy, sm] = selectedMonth.split('-').map(Number)
+    const monthStart = format(startOfMonth(new Date(sy, sm - 1, 1)), 'yyyy-MM-dd')
+    const monthEnd = format(endOfMonth(new Date(sy, sm - 1, 1)), 'yyyy-MM-dd')
 
     const fetchShifts = async () => {
       setLoading(true)
@@ -107,11 +108,12 @@ export default function SalaryPage() {
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
   }, [shifts])
 
-  const monthLabel = format(new Date(selectedMonth + '-01'), 'yyyy年M月', { locale: ja })
+  const [labelY, labelM] = selectedMonth.split('-').map(Number)
+  const monthLabel = format(new Date(labelY, labelM - 1, 1), 'yyyy年M月', { locale: ja })
 
   const handleMonthChange = (delta: number) => {
-    const d = new Date(selectedMonth + '-01')
-    d.setMonth(d.getMonth() + delta)
+    const [cy, cm] = selectedMonth.split('-').map(Number)
+    const d = new Date(cy, cm - 1 + delta, 1)
     setSelectedMonth(format(d, 'yyyy-MM'))
   }
 

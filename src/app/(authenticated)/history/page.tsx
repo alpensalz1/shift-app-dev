@@ -45,7 +45,8 @@ export default function HistoryPage() {
     if (!staff) return
     let cancelled = false
     setLoading(true)
-    const base = new Date(selectedMonth + '-01')
+    const [hy, hm] = selectedMonth.split('-').map(Number)
+    const base = new Date(hy, hm - 1, 1)
     const monthStart = fmtKey(startOfMonth(base))
     const monthEnd = fmtKey(endOfMonth(base))
     supabase
@@ -65,7 +66,8 @@ export default function HistoryPage() {
     return () => { cancelled = true }
   }, [staff?.id, selectedMonth])
 
-  const monthDate = new Date(selectedMonth + '-01')
+  const [histY, histM] = selectedMonth.split('-').map(Number)
+  const monthDate = new Date(histY, histM - 1, 1)
   const monthLabel = format(monthDate, 'yyyy年M月', { locale: ja })
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(monthDate),
@@ -92,8 +94,8 @@ export default function HistoryPage() {
     ) / 10
 
   const handleMonthChange = (delta: number) => {
-    const d = new Date(selectedMonth + '-01')
-    d.setMonth(d.getMonth() + delta)
+    const [cy, cm] = selectedMonth.split('-').map(Number)
+    const d = new Date(cy, cm - 1 + delta, 1)
     setSelectedMonth(format(d, 'yyyy-MM'))
   }
 
