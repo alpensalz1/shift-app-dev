@@ -185,7 +185,7 @@ export default function HomePage() {
     const fetchShifts = async () => {
       setLoading(true)
       try {
-        const we = format(addDays(new Date(weekStartStr), 6), 'yyyy-MM-dd')
+        const we = format(addDays(new Date(weekStartStr + 'T00:00:00'), 6), 'yyyy-MM-dd')
         const { data, error } = await supabase
           .from('shifts_fixed')
           .select('*, staffs(name, employment_type)')
