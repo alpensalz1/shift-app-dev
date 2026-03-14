@@ -634,23 +634,24 @@ function RulesTab() {
     setSaving(true)
     setMessage('')
     try {
-      for (const staff of allStaffs) {
-        const shopId = assignments[staff.id] ?? 0
-        // 既存ルールを削除して新しい配属を挿入
-        const { error: delErr } = await supabase.from('shift_rules').delete().eq('staff_id', staff.id)
+      // 全社員のルールを一括削除してから一括挿入（逐次処理より途中失敗リスクを低減）
+      const staffIds = allStaffs.map(s => s.id)
+      if (staffIds.length > 0) {
+        const { error: delErr } = await supabase.from('shift_rules').delete().in('staff_id', staffIds)
         if (delErr) throw new Error('削除エラー: ' + delErr.message)
-        if (shopId > 0) {
-          const { error: insErr } = await supabase.from('shift_rules').insert({
-            shop_id: shopId, staff_id: staff.id, priority: 1, is_active: true,
-          })
-          if (insErr) throw new Error('登録エラー: ' + insErr.message)
-        }
+      }
+      const insertRows = allStaffs
+        .filter(s => (assignments[s.id] ?? 0) > 0)
+        .map(s => ({ shop_id: assignments[s.id], staff_id: s.id, priority: 1, is_active: true }))
+      if (insertRows.length > 0) {
+        const { error: insErr } = await supabase.from('shift_rules').insert(insertRows)
+        if (insErr) throw new Error('登録エラー: ' + insErr.message)
       }
       setMessage('配属設定を保存しました')
       fetchData()
     } catch (e: any) {
       setMessage('保存に失敗しました: ' + (e.message || ''))
-      // 途中で失敗した場合でもDB実態に合わせてUIを更新する
+      // 失敗後もDB実態に合わせてUIを更新する
       fetchData()
     }
     setSaving(false)
