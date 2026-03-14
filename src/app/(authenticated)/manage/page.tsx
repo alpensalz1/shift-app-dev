@@ -101,11 +101,14 @@ function ShiftConfirmTab() {
   const [closedDates, setClosedDates] = useState<string[]>([])
   const [offRequests, setOffRequests] = useState<OffRequest[]>([])
   const autoAdvancedRef = useRef(false)
+  // 月切替時のfetch競合を防ぐためのバージョン管理（古い月のfetchが新しい月のデータを上書きしないよう）
+  const fetchVersionRef = useRef(0)
 
   const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
   const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
 
   const fetchAll = useCallback(async () => {
+    const version = ++fetchVersionRef.current
     setLoading(true)
     const [reqRes, fixedRes, configRes, staffRes, closedRes, offRes] = await Promise.all([
       supabase.from('shift_requests').select('*, staffs(name, employment_type)')
@@ -117,6 +120,8 @@ function ShiftConfirmTab() {
       supabase.from('closed_dates').select('date').gte('date', monthStart).lte('date', monthEnd),
       supabase.from('off_requests').select('*').gte('date', monthStart).lte('date', monthEnd),
     ])
+    // 月切替により新しいfetchが開始されていたら古い結果は破棄する
+    if (fetchVersionRef.current !== version) return
     if (reqRes.error) console.error('shift_requests取得失敗:', reqRes.error.message)
     else if (reqRes.data) setRequests(reqRes.data as RequestWithStaff[])
     if (fixedRes.error) console.error('shifts_fixed取得失敗:', fixedRes.error.message)
@@ -249,8 +254,9 @@ function ShiftConfirmTab() {
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
     setConfirming(true)
     setMessage('')
-    // アルバイト/長期は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
-    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期'
+    // アルバイト/長期/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
+    // shifts/page.tsx の isPartTimer 定義と一致させる
+    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期' || req.staffs.employment_type === 'システム管理者'
     // 店舗config境界で申請時間を分割し、対象typeの時間帯のみ確定（shift_requestsは変更しない）
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
     const split = splits.find(s => s.type === type)
@@ -310,8 +316,9 @@ function ShiftConfirmTab() {
   const handleAutoConfirm = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
     setMessage('')
-    // アルバイト/長期は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
-    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期'
+    // アルバイト/長期/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
+    // shifts/page.tsx の isPartTimer 定義と一致させる
+    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期' || req.staffs.employment_type === 'システム管理者'
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
     // この日のスタッフの既存確定をすべて削除してからinsert
     const { error: delErr } = await supabase.from('shifts_fixed')
@@ -784,8 +791,11 @@ function AutoGenerateTab() {
   const [preview, setPreview] = useState<GeneratedRow[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  // 期間切替時のfetch競合を防ぐためのバージョン管理（古い期間のfetchが新しい期間のデータを上書きしないよう）
+  const fetchVersionRef = useRef(0)
 
   const fetchData = useCallback(async () => {
+    const version = ++fetchVersionRef.current
     setLoading(true)
     const periodStart = format(period.start, 'yyyy-MM-dd')
     const periodEnd = format(period.end, 'yyyy-MM-dd')
@@ -797,6 +807,8 @@ function AutoGenerateTab() {
       supabase.from('shift_config').select('*'),
       supabase.from('closed_dates').select('date').gte('date', periodStart).lte('date', periodEnd),
     ])
+    // 期間切替により新しいfetchが開始されていたら古い結果は破棄する
+    if (fetchVersionRef.current !== version) return
     if (rulesRes.error) console.error('shift_rules取得失敗:', rulesRes.error.message)
     else if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
     if (offRes.error) console.error('off_requests取得失敗:', offRes.error.message)
