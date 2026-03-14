@@ -23,10 +23,14 @@ export function BottomNav() {
     setIsManager(manager)
     setShowSalary(staff?.employment_type === 'アルバイト')
     if (manager) {
+      // 当月以降の未処理申請のみカウント（過去の放置申請で誤表示しないよう制限）
+      const thisMonth = new Date()
+      const monthStart = `${thisMonth.getFullYear()}-${String(thisMonth.getMonth() + 1).padStart(2, '0')}-01`
       supabase
         .from('shift_requests')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending')
+        .gte('date', monthStart)
         .then(({ count }) => { if (count != null) setPendingCount(count) })
     }
   }, [pathname])
