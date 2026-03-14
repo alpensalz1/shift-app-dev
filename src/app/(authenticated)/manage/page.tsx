@@ -1228,8 +1228,9 @@ export function StaffManagementTab() {
 
   const fetchStaffs = async () => {
     setLoading(true)
-    const { data } = await supabase.from('staffs').select('*').order('name')
-    if (data) setStaffs(data)
+    const { data, error } = await supabase.from('staffs').select('*').order('name')
+    if (error) console.error('staffs取得失敗:', error.message)
+    else if (data) setStaffs(data)
     setLoading(false)
   }
 
