@@ -287,6 +287,11 @@ function ShiftConfirmTab() {
 
   // 却下された申請を申請中（pending）に戻す
   const handleRestore = async (req: RequestWithStaff) => {
+    // 定休日に設定されている日の申請は復元不可（「定休日解除」で一括復元する）
+    if (closedDates.includes(req.date)) {
+      setMessage('定休日が設定されているため申請中に戻せません。先に定休日を解除してください。')
+      return
+    }
     setConfirming(true)
     const { error } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('id', req.id)
     if (error) setMessage('復元に失敗: ' + error.message)
