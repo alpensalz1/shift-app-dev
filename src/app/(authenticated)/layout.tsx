@@ -45,17 +45,12 @@ export default function AuthenticatedLayout({
 
   if (!staff) return null
 
-  const shopName = staff.shop_id === 2 ? '下北沢' : '三軒茶屋'
-
   return (
     <div className="min-h-screen pb-20" style={{ '--theme-color': themeColor } as React.CSSProperties}>
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center justify-between h-12 px-4 max-w-lg mx-auto">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-bold tracking-tight">タナカたなか</h1>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">
-              {shopName}
-            </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground font-medium">{staff.name}</span>
