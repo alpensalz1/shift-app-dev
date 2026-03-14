@@ -361,17 +361,15 @@ function PartTimerForm({
       }))
       const { error: insErr } = await supabase.from('shift_requests').insert(rows)
       if (insErr) throw new Error('送信エラー: ' + insErr.message)
-      // 最新データを再取得
+      // INSERT成功後に最新データを再取得（再取得失敗でもINSERT自体は成功しているため、エラーにしない）
       const [reqRes2, fixedRes2] = await Promise.all([
         supabase.from('shift_requests').select('*')
           .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
         supabase.from('shifts_fixed').select('*')
           .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
       ])
-      if (reqRes2.error) throw new Error('再読込エラー: ' + reqRes2.error.message)
-      if (fixedRes2.error) throw new Error('再読込エラー: ' + fixedRes2.error.message)
-      setExistingRequests(reqRes2.data || [])
-      setFixedShifts(fixedRes2.data || [])
+      if (!reqRes2.error) setExistingRequests(reqRes2.data || [])
+      if (!fixedRes2.error) setFixedShifts(fixedRes2.data || [])
       setViewMode('status')
     } catch (e: any) {
       setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
