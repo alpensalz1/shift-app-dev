@@ -269,27 +269,6 @@ function ShiftConfirmTab() {
     setConfirming(false)
   }
 
-  const handleConfirmBoth = async (req: RequestWithStaff, shopId: number) => {
-    setConfirming(true)
-    setMessage('')
-    // 既存の仕込み・営業レコードを削除してからinsert
-    await Promise.all([
-      supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date).eq('type', '仕込み'),
-      supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date).eq('type', '営業'),
-    ])
-    const [r1, r2] = await Promise.all([
-      supabase.from('shifts_fixed').insert(
-        { date: req.date, shop_id: shopId, type: '仕込み', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time }
-      ),
-      supabase.from('shifts_fixed').insert(
-        { date: req.date, shop_id: shopId, type: '営業', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time }
-      ),
-    ])
-    if (r1.error || r2.error) setMessage('確定に失敗: ' + (r1.error?.message ?? r2.error?.message ?? ''))
-    else { setMessage(`${req.staffs.name}の仕込み・営業を一括確定しました`); fetchAll() }
-    setConfirming(false)
-  }
-
   const handleReject = async (req: RequestWithStaff) => {
     setConfirming(true)
     const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
@@ -753,6 +732,7 @@ function AutoGenerateTab() {
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [allExecutives, setAllExecutives] = useState<Staff[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
+  const [closedDatesAuto, setClosedDatesAuto] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<GeneratedRow[] | null>(null)
   const [saving, setSaving] = useState(false)
@@ -762,18 +742,20 @@ function AutoGenerateTab() {
     setLoading(true)
     const periodStart = format(period.start, 'yyyy-MM-dd')
     const periodEnd = format(period.end, 'yyyy-MM-dd')
-    const [rulesRes, offRes, staffsRes, execRes, configRes] = await Promise.all([
+    const [rulesRes, offRes, staffsRes, execRes, configRes, closedRes] = await Promise.all([
       supabase.from('shift_rules').select('*, staffs(name)').eq('is_active', true).order('shop_id').order('priority'),
       supabase.from('off_requests').select('*').gte('date', periodStart).lte('date', periodEnd),
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '役員'),
       supabase.from('shift_config').select('*'),
+      supabase.from('closed_dates').select('date').gte('date', periodStart).lte('date', periodEnd),
     ])
     if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
     if (offRes.data) setOffRequests(offRes.data as OffRequest[])
     if (staffsRes.data) setAllStaffs(staffsRes.data)
     if (execRes.data) setAllExecutives(execRes.data)
     if (configRes.data) setConfigs(configRes.data)
+    if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date))
     setLoading(false)
   }, [period.start.toISOString(), period.end.toISOString()])
 
@@ -822,6 +804,9 @@ function AutoGenerateTab() {
 
     for (const date of dates) {
       const dateStr = format(date, 'yyyy-MM-dd')
+
+      // 休業日はスキップ
+      if (closedDatesAuto.includes(dateStr)) continue
 
       // この日すでにいずれかの店舗に割り当て済みのスタッフID（重複配置防止）
       const assignedToday = new Set<number>()

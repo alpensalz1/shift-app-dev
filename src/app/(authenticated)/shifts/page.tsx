@@ -311,6 +311,8 @@ function PartTimerForm({
 
   function toggleDay(dk: string) {
     if (currentStart >= currentEnd) return
+    // 過去日は選択不可
+    if (dk < format(new Date(), 'yyyy-MM-dd')) return
     setDayTimeMap((prev) => {
       const next = { ...prev }
       if (next[dk]) {
@@ -460,6 +462,7 @@ function PartTimerForm({
               // 現在の時間帯と一致するセル = 青、別の時間帯 = インディゴ
               const isCurrentTime = timeSel?.start === currentStart && timeSel?.end === currentEnd
               const dow = getDay(d)
+              const isPast = dk < format(new Date(), 'yyyy-MM-dd')
               const shortLabel = timeSel
                 ? `${timeSel.start.substring(0, 2)}-${timeSel.end.substring(0, 2)}`
                 : null
@@ -467,8 +470,11 @@ function PartTimerForm({
                 <button
                   key={dk}
                   onClick={() => toggleDay(dk)}
+                  disabled={isPast}
                   className={`h-11 w-full rounded-xl flex flex-col items-center justify-center gap-0 text-sm font-medium transition-all active:scale-95 ${
-                    isSel
+                    isPast
+                      ? 'text-muted-foreground/30 cursor-not-allowed'
+                      : isSel
                       ? isCurrentTime
                         ? 'bg-blue-500 text-white shadow-sm'
                         : 'bg-indigo-600 text-white shadow-sm'
