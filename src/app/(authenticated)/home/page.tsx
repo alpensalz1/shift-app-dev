@@ -169,6 +169,7 @@ export default function HomePage() {
 
   // 承認待ち申請を週切替のたびに再取得（最新状態を反映するため）
   useEffect(() => {
+    let cancelled = false
     const staff = getStoredStaff()
     if (!staff || staff.employment_type !== 'アルバイト') return
     const todayStr = format(new Date(), 'yyyy-MM-dd')
@@ -180,12 +181,15 @@ export default function HomePage() {
       .gte('date', todayStr)
       .order('date', { ascending: true })
       .then(({ data, error }) => {
+        if (cancelled) return
         if (error) console.error('承認待ち申請取得失敗:', error.message)
         else if (data) setPendingRequests(data as ShiftRequest[])
       })
+    return () => { cancelled = true }
   }, [weekStartStr])
 
   useEffect(() => {
+    let cancelled = false
     const fetchShifts = async () => {
       setLoading(true)
       try {
@@ -195,15 +199,17 @@ export default function HomePage() {
           .select('*, staffs(name, employment_type)')
           .gte('date', weekStartStr)
           .lte('date', we)
+        if (cancelled) return
         if (error) throw error
         setShifts(data || [])
       } catch (err) {
-        console.error(err)
+        if (!cancelled) console.error(err)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     fetchShifts()
+    return () => { cancelled = true }
   }, [weekStartStr])
 
   const dayShifts = useMemo(() => {
