@@ -1053,8 +1053,8 @@ function AutoGenerateTab() {
                     {format(new Date(date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
                   </div>
                   <div className="space-y-1">
-                    {rows.sort((a, b) => a.shop_id - b.shop_id || a.type.localeCompare(b.type)).map((r, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
+                    {rows.sort((a, b) => a.shop_id - b.shop_id || a.type.localeCompare(b.type)).map((r) => (
+                      <div key={`${r.staff_name}-${r.shop_id}-${r.type}`} className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
                         <span className="text-muted-foreground w-12">{r.shop_name === '三軒茶屋' ? '三茶' : '下北'}</span>
                         <span className="font-medium">{r.staff_name}</span>
                         <span className={`px-1.5 py-0.5 rounded-full ${r.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{r.type}</span>
@@ -1108,7 +1108,8 @@ function getWageForDateManage(wageHistories: WageHistory[], staffId: number, dat
       return r.wage
     }
   }
-  return records.length > 0 ? records[records.length - 1].wage : null
+  // マッチする期間がない場合は最新レコードを返す（effective_toが全て設定されている稀なケース）
+  return records.length > 0 ? records[0].wage : null
 }
 
 export function LaborCostTab() {

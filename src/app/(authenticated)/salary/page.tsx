@@ -20,7 +20,8 @@ function getWageForDate(wageHistories: WageHistory[], staffId: number, date: str
       return r.wage
     }
   }
-  return records.length > 0 ? records[records.length - 1].wage : null
+  // マッチする期間がない場合は最新レコードを返す（effective_toが全て設定されている稀なケース）
+  return records.length > 0 ? records[0].wage : null
 }
 
 export default function SalaryPage() {
