@@ -104,20 +104,25 @@ function useTypingEffect(text: string, speed = 50, startDelay = 500) {
   useEffect(() => {
     setDisplayed('')
     setDone(false)
+    // intervalRef をクロージャで保持し、setTimeout後に開始したintervalもアンマウント時に正しくクリアする
+    // setTimeout内のreturnはuseEffectのcleanupにはならないため、外側で管理する必要がある
+    let interval: ReturnType<typeof setInterval> | null = null
     const timeout = setTimeout(() => {
       let i = 0
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         if (i < text.length) {
           setDisplayed(text.slice(0, i + 1))
           i++
         } else {
           setDone(true)
-          clearInterval(interval)
+          if (interval) clearInterval(interval)
         }
       }, speed)
-      return () => clearInterval(interval)
     }, startDelay)
-    return () => clearTimeout(timeout)
+    return () => {
+      clearTimeout(timeout)
+      if (interval) clearInterval(interval)
+    }
   }, [text, speed, startDelay])
 
   return { displayed, done }
