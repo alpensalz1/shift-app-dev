@@ -866,7 +866,7 @@ function AutoGenerateTab() {
 
         // 仕込みのみの人の行を追加
         for (const staff of prepOnlyStaffList) {
-          const t = getPatternTime(staff.id, '仕込み') || getDefaultTime(shopId, '仕込み')
+          const t = getDefaultTime(shopId, '仕込み')
           rows.push({
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: staff.id, staff_name: staff.name,
@@ -879,8 +879,8 @@ function AutoGenerateTab() {
         if (fullDayStaff) {
           const isExec = fullDayStaff.employment_type === '役員'
           if (isExec) execShiftCount[fullDayStaff.id] = (execShiftCount[fullDayStaff.id] ?? 0) + 1
-          const t1 = getPatternTime(fullDayStaff.id, '仕込み') || getDefaultTime(shopId, '仕込み')
-          const t2 = getPatternTime(fullDayStaff.id, '営業') || getDefaultTime(shopId, '営業')
+          const t1 = getDefaultTime(shopId, '仕込み')
+          const t2 = getDefaultTime(shopId, '営業')
           rows.push({
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
