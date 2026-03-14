@@ -284,6 +284,13 @@ function PartTimerForm({
   // 既存の申請と確定シフトを読み込む
   useEffect(() => {
     let cancelled = false
+    // 期間切替時に古いデータが一瞬表示されないよう即座にリセット
+    setLoadingExisting(true)
+    setViewMode('form')
+    setDayTimeMap({})
+    setExistingRequests([])
+    setFixedShifts([])
+    setSubmitError('')
     async function load() {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
@@ -593,6 +600,11 @@ function FullTimeForm({
   // 既存の off_requests を読み込む
   useEffect(() => {
     let cancelled = false
+    // 期間切替時に古いデータが一瞬表示されないよう即座にリセット
+    setLoadingExisting(true)
+    setChoices({})
+    setDone(false)
+    setSubmitError('')
     async function load() {
       const { data, error } = await supabase
         .from('off_requests')
