@@ -755,6 +755,8 @@ function MonthlyReportTab({ month }: { month: string }) {
 
   useEffect(() => {
     let cancelled = false
+    // 月切替時に古いデータが一瞬表示されないよう即座にローディング状態にリセット
+    setLoading(true)
     const [y, m] = month.split('-').map(Number)
     const s = `${month}-01`, e = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
     Promise.all([
