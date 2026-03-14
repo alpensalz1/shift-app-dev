@@ -584,8 +584,10 @@ function RulesTab() {
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
       supabase.from('shift_rules').select('*'),
     ])
-    if (staffsRes.data) setAllStaffs(staffsRes.data)
-    if (rulesRes.data) {
+    if (staffsRes.error) console.error('staffs取得失敗:', staffsRes.error.message)
+    else if (staffsRes.data) setAllStaffs(staffsRes.data)
+    if (rulesRes.error) console.error('shift_rules取得失敗:', rulesRes.error.message)
+    else if (rulesRes.data) {
       const map: Record<number, number> = {}
       ;(rulesRes.data as ShiftRule[]).forEach((r) => {
         // 同一スタッフに複数ルールがある場合は最初に見つかったものを使用
@@ -766,12 +768,18 @@ function AutoGenerateTab() {
       supabase.from('shift_config').select('*'),
       supabase.from('closed_dates').select('date').gte('date', periodStart).lte('date', periodEnd),
     ])
-    if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
-    if (offRes.data) setOffRequests(offRes.data as OffRequest[])
-    if (staffsRes.data) setAllStaffs(staffsRes.data)
-    if (execRes.data) setAllExecutives(execRes.data)
-    if (configRes.data) setConfigs(configRes.data)
-    if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date))
+    if (rulesRes.error) console.error('shift_rules取得失敗:', rulesRes.error.message)
+    else if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
+    if (offRes.error) console.error('off_requests取得失敗:', offRes.error.message)
+    else if (offRes.data) setOffRequests(offRes.data as OffRequest[])
+    if (staffsRes.error) console.error('staffs(社員)取得失敗:', staffsRes.error.message)
+    else if (staffsRes.data) setAllStaffs(staffsRes.data)
+    if (execRes.error) console.error('staffs(役員)取得失敗:', execRes.error.message)
+    else if (execRes.data) setAllExecutives(execRes.data)
+    if (configRes.error) console.error('shift_config取得失敗:', configRes.error.message)
+    else if (configRes.data) setConfigs(configRes.data)
+    if (closedRes.error) console.error('closed_dates取得失敗:', closedRes.error.message)
+    else if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date))
     setLoading(false)
   }, [period.start.toISOString(), period.end.toISOString()])
 
