@@ -155,6 +155,8 @@ export default function HomePage() {
 
   const weekStart = useMemo(() => startOfWeek(selectedDate, { weekStartsOn: 0 }), [selectedDate])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  // 週の開始日を文字列でキャッシュ（同一週内の日付移動で再フェッチしないよう）
+  const weekStartStr = useMemo(() => format(weekStart, 'yyyy-MM-dd'), [weekStart])
 
   useEffect(() => {
     const staff = getStoredStaff()
@@ -180,13 +182,12 @@ export default function HomePage() {
     const fetchShifts = async () => {
       setLoading(true)
       try {
-        const ws = startOfWeek(selectedDate, { weekStartsOn: 0 })
-        const we = addDays(ws, 6)
+        const we = format(addDays(new Date(weekStartStr), 6), 'yyyy-MM-dd')
         const { data, error } = await supabase
           .from('shifts_fixed')
           .select('*, staffs(name, employment_type)')
-          .gte('date', format(ws, 'yyyy-MM-dd'))
-          .lte('date', format(we, 'yyyy-MM-dd'))
+          .gte('date', weekStartStr)
+          .lte('date', we)
         if (error) throw error
         setShifts(data || [])
       } catch (err) {
@@ -196,7 +197,7 @@ export default function HomePage() {
       }
     }
     fetchShifts()
-  }, [selectedDate])
+  }, [weekStartStr])
 
   const dayShifts = useMemo(() => {
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
