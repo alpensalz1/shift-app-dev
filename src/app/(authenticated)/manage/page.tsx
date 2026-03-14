@@ -973,8 +973,14 @@ function AutoGenerateTab() {
       staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
     }))
     const { error } = await supabase.from('shifts_fixed').insert(insertRows)
-    if (error) setMessage('保存に失敗: ' + error.message)
-    else { setMessage(`${preview.length}件のシフトを確定しました`); setPreview(null) }
+    if (error) {
+      setMessage('保存に失敗: ' + error.message)
+      // INSERT失敗後もfetchDataを呼んでUIをDB実態に同期する（DELETEは成功済みの可能性があるため）
+      fetchData()
+    } else {
+      setMessage(`${preview.length}件のシフトを確定しました`)
+      setPreview(null)
+    }
     setSaving(false)
   }
 
