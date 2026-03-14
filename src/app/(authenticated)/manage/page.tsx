@@ -572,159 +572,124 @@ function ShiftConfirmTab() {
 }
 
 // =============================================
-// タブ2: ルール設定
+// タブ2: ルール設定（配属決定モデル）
 // =============================================
 function RulesTab() {
-  const [rules, setRules] = useState<RuleWithStaff[]>([])
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const [addShopId, setAddShopId] = useState<1 | 2>(1)
-  const [addStaffId, setAddStaffId] = useState<number>(0)
+  // staffId -> 配属店舗ID（0 = 未設定）
+  const [assignments, setAssignments] = useState<Record<number, number>>({})
 
-  const fetchRules = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
-    const [rulesRes, staffsRes] = await Promise.all([
-      supabase.from('shift_rules').select('*, staffs(name)').order('shop_id').order('priority'),
+    const [staffsRes, rulesRes] = await Promise.all([
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
+      supabase.from('shift_rules').select('*'),
     ])
-    if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
-    if (staffsRes.data) {
-      setAllStaffs(staffsRes.data)
-      if (staffsRes.data.length > 0 && addStaffId === 0) setAddStaffId(staffsRes.data[0].id)
+    if (staffsRes.data) setAllStaffs(staffsRes.data)
+    if (rulesRes.data) {
+      const map: Record<number, number> = {}
+      ;(rulesRes.data as ShiftRule[]).forEach((r) => {
+        // 同一スタッフに複数ルールがある場合は最初に見つかったものを使用
+        if (!map[r.staff_id]) map[r.staff_id] = r.shop_id
+      })
+      setAssignments(map)
     }
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchRules() }, [fetchRules])
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const rulesForShop = (shopId: number) =>
-    rules.filter((r) => r.shop_id === shopId).sort((a, b) => a.priority - b.priority)
-
-  const toggleActive = async (rule: RuleWithStaff) => {
-    const { error } = await supabase.from('shift_rules').update({ is_active: !rule.is_active }).eq('id', rule.id)
-    if (!error) setRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, is_active: !r.is_active } : r))
+  const handleAssignmentChange = (staffId: number, shopId: number) => {
+    setAssignments((prev) => ({ ...prev, [staffId]: shopId }))
   }
 
-  const movePriority = async (rule: RuleWithStaff, dir: 'up' | 'down') => {
-    const shopRules = rulesForShop(rule.shop_id)
-    const idx = shopRules.findIndex((r) => r.id === rule.id)
-    const targetIdx = dir === 'up' ? idx - 1 : idx + 1
-    if (targetIdx < 0 || targetIdx >= shopRules.length) return
-    const other = shopRules[targetIdx]
-    // swap priorities
-    const [p1, p2] = [rule.priority, other.priority]
-    await Promise.all([
-      supabase.from('shift_rules').update({ priority: p2 }).eq('id', rule.id),
-      supabase.from('shift_rules').update({ priority: p1 }).eq('id', other.id),
-    ])
-    setRules((prev) => prev.map((r) => {
-      if (r.id === rule.id) return { ...r, priority: p2 }
-      if (r.id === other.id) return { ...r, priority: p1 }
-      return r
-    }))
-  }
-
-  const addRule = async () => {
-    if (!addStaffId) return
+  const handleSave = async () => {
     setSaving(true)
     setMessage('')
-    const shopRules = rulesForShop(addShopId)
-    const maxPriority = shopRules.length > 0 ? Math.max(...shopRules.map((r) => r.priority)) : 0
-    const { error } = await supabase.from('shift_rules').insert({
-      shop_id: addShopId, staff_id: addStaffId, priority: maxPriority + 1, is_active: true,
-    })
-    if (error) setMessage('追加に失敗: ' + error.message)
-    else { setMessage('追加しました'); fetchRules() }
+    try {
+      for (const staff of allStaffs) {
+        const shopId = assignments[staff.id] ?? 0
+        // 既存ルールを削除して新しい配属を挿入
+        await supabase.from('shift_rules').delete().eq('staff_id', staff.id)
+        if (shopId > 0) {
+          await supabase.from('shift_rules').insert({
+            shop_id: shopId, staff_id: staff.id, priority: 1, is_active: true,
+          })
+        }
+      }
+      setMessage('配属設定を保存しました')
+      fetchData()
+    } catch {
+      setMessage('保存に失敗しました')
+    }
     setSaving(false)
-  }
-
-  const deleteRule = async (id: number) => {
-    await supabase.from('shift_rules').delete().eq('id', id)
-    setRules((prev) => prev.filter((r) => r.id !== id))
   }
 
   if (loading) return <div className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></div>
 
+  const shopCount = (shopId: number) => allStaffs.filter(s => (assignments[s.id] ?? 0) === shopId).length
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">店舗ごとに社員の配属優先順位を設定します。優先度が高い（上の）社員から割り当てられます。</p>
+      <p className="text-sm text-muted-foreground">
+        社員ごとに配属店舗を設定します。配属先に設定された店舗にしか自動生成で割り当てられません。未設定の社員は補填候補として扱われます。
+      </p>
 
-      {[1, 2].map((shopId) => (
-        <Card key={shopId}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{SHOP_NAMES[shopId]}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {rulesForShop(shopId).map((rule, idx, arr) => (
-                <div key={rule.id} className={`flex items-center gap-2 p-2.5 rounded-lg border ${rule.is_active ? 'bg-background' : 'bg-muted/50'}`}>
-                  <span className="text-xs font-bold text-muted-foreground w-5 text-center">{idx + 1}</span>
-                  <span className={`text-sm font-medium flex-1 ${!rule.is_active ? 'line-through text-muted-foreground' : ''}`}>
-                    {rule.staffs.name}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => movePriority(rule, 'up')} disabled={idx === 0}
-                      className="p-1 rounded hover:bg-accent disabled:opacity-30 transition-colors">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => movePriority(rule, 'down')} disabled={idx === arr.length - 1}
-                      className="p-1 rounded hover:bg-accent disabled:opacity-30 transition-colors">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => toggleActive(rule)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                        rule.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'
-                      }`}>
-                      {rule.is_active ? '有効' : '無効'}
-                    </button>
-                    <button onClick={() => deleteRule(rule.id)}
-                      className="p-1 text-muted-foreground hover:text-destructive transition-colors">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {rulesForShop(shopId).length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-2">ルールなし</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-
-      {/* ルール追加 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">ルール追加</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 items-end">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">店舗</label>
-              <select value={addShopId} onChange={(e) => setAddShopId(Number(e.target.value) as 1 | 2)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm">
-                <option value={1}>三軒茶屋</option>
-                <option value={2}>下北沢</option>
-              </select>
-            </div>
-            <div className="space-y-1 flex-1">
-              <label className="text-xs text-muted-foreground">社員</label>
-              <select value={addStaffId} onChange={(e) => setAddStaffId(Number(e.target.value))}
-                className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm">
-                {allStaffs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <Button size="sm" onClick={addRule} disabled={saving || !addStaffId} className="h-9">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : '追加'}
-            </Button>
+      {/* 配属先サマリー */}
+      <div className="grid grid-cols-3 gap-2">
+        {[{ id: 1, label: '三軒茶屋' }, { id: 2, label: '下北沢' }, { id: 0, label: '未設定' }].map(({ id, label }) => (
+          <div key={id} className={`text-center py-2.5 rounded-lg text-xs font-medium border ${
+            id === 1 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+            id === 2 ? 'bg-blue-50 border-blue-200 text-blue-700' :
+            'bg-zinc-50 border-zinc-200 text-zinc-500'
+          }`}>
+            <div className="text-lg font-bold">{shopCount(id)}</div>
+            <div>{label}</div>
           </div>
-          {message && (
-            <p className={`text-xs mt-2 ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>{message}</p>
-          )}
+        ))}
+      </div>
+
+      <Card>
+        <CardContent className="pt-4">
+          <div className="divide-y">
+            {allStaffs.map((staff) => {
+              const assigned = assignments[staff.id] ?? 0
+              return (
+                <div key={staff.id} className="flex items-center gap-3 py-3">
+                  <span className="text-sm font-medium flex-1">{staff.name}</span>
+                  <select
+                    value={assigned}
+                    onChange={(e) => handleAssignmentChange(staff.id, Number(e.target.value))}
+                    className={`h-9 rounded-md border px-2 text-sm transition-colors ${
+                      assigned === 1 ? 'border-emerald-300 bg-emerald-50 text-emerald-800' :
+                      assigned === 2 ? 'border-blue-300 bg-blue-50 text-blue-800' :
+                      'border-input bg-background text-muted-foreground'
+                    }`}
+                  >
+                    <option value={0}>未設定</option>
+                    <option value={1}>三軒茶屋</option>
+                    <option value={2}>下北沢</option>
+                  </select>
+                </div>
+              )
+            })}
+            {allStaffs.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">社員が登録されていません</p>
+            )}
+          </div>
         </CardContent>
       </Card>
+
+      <Button onClick={handleSave} disabled={saving} className="w-full h-11">
+        {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : <><Check className="mr-2 h-4 w-4" />配属設定を保存</>}
+      </Button>
+
+      {message && (
+        <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>{message}</p>
+      )}
     </div>
   )
 }
@@ -797,9 +762,21 @@ function AutoGenerateTab() {
     }
 
     const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
-    const cfg = configs.find((c) => c.shop_id === shopId && c.type === type)
-    if (cfg) return { start: cfg.default_start_time, end: cfg.default_end_time }
-    return type === '仕込み' ? { start: '09:00:00', end: '17:00:00' } : { start: '17:00:00', end: '24:00:00' }
+    // shift_config の仕込みレコードは default_end_time が仕込み/営業の境界時刻を示す
+    // default_start_time と default_end_time が同値の場合はconfig設定不備のため fallback を使用
+    const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
+    const eigyoCfg = configs.find((c) => c.shop_id === shopId && c.type === '営業')
+    const splitTime = shikomiCfg?.default_end_time ?? '18:00:00'
+    const closeTime = eigyoCfg?.default_end_time ?? '24:00:00'
+    if (type === '仕込み') {
+      const startTime = shikomiCfg?.default_start_time ?? '10:00:00'
+      // startTime < splitTime なら正常なconfig、同値ならconfig不備なのでfallback
+      return startTime < splitTime
+        ? { start: startTime, end: splitTime }
+        : { start: '10:00:00', end: splitTime }
+    } else {
+      return { start: splitTime, end: closeTime }
+    }
   }
 
   // 自動生成ロジック（優先: ルール設定社員 → ルール外社員 → 役員（均等）→ 空欄）
@@ -820,6 +797,9 @@ function AutoGenerateTab() {
     // 役員シフト数トラッカー（均等配置用）
     const execShiftCount: Record<number, number> = {}
     allExecutives.forEach(s => { execShiftCount[s.id] = 0 })
+
+    // 全店舗のルール設定済みスタッフID（Tier2で他店舗ルール社員を除外するために使用）
+    const allRuledIds = new Set(rules.map(r => r.staff_id))
 
     for (const date of dates) {
       const dateStr = format(date, 'yyyy-MM-dd')
@@ -852,10 +832,10 @@ function AutoGenerateTab() {
           break
         }
 
-        // Tier2: ルール設定外の社員 ※他店舗割り当て済みは除外
+        // Tier2: 配属未設定の社員（どの店舗のルールにも含まれない）※他店舗割り当て済みは除外
         if (!fullDayStaff) {
           for (const staff of allStaffs) {
-            if (shopRuledIds.has(staff.id)) continue
+            if (allRuledIds.has(staff.id)) continue  // 他店舗含む全ルール社員を除外
             if (assignedToday.has(staff.id)) continue
             const offType = offMap[staff.id]?.[dateStr]
             if (offType === '休み') continue
