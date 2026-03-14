@@ -101,7 +101,16 @@ export default function SalaryPage() {
     setSelectedMonth(format(d, 'yyyy-MM'))
   }
 
-  if (staff?.employment_type !== 'アルバイト') {
+  // staff未ロード中はスピナーを表示（null時にアルバイト専用メッセージが一瞬表示されるバグ防止）
+  if (!staff) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-6 w-6 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (staff.employment_type !== 'アルバイト') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center gap-4 animate-fade-in">
         <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
