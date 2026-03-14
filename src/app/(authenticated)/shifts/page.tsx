@@ -630,6 +630,7 @@ function FullTimeForm({
   async function handleSubmit() {
     setSubmitting(true)
     setSubmitError('')
+    let deleteDone = false
     try {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
@@ -640,6 +641,7 @@ function FullTimeForm({
         .gte('date', startKey)
         .lte('date', endKey)
       if (delErr) throw new Error('削除エラー: ' + delErr.message)
+      deleteDone = true
       const rows = Object.entries(choices).map(([dk, type]) => ({
         staff_id: staff.id,
         date: dk,
@@ -652,6 +654,22 @@ function FullTimeForm({
       setDone(true)
     } catch (e: any) {
       setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
+      // DELETE成功後にINSERTが失敗した場合、DBの実態に合わせてUIを更新する
+      if (deleteDone) {
+        const { data, error } = await supabase
+          .from('off_requests')
+          .select('*')
+          .eq('staff_id', staff.id)
+          .gte('date', fmtKey(periodStart))
+          .lte('date', fmtKey(periodEnd))
+        if (!error && data) {
+          const c: DayChoiceMap = {}
+          data.forEach((r: OffRequest) => {
+            c[r.date.substring(0, 10)] = r.type as DayChoice
+          })
+          setChoices(c)
+        }
+      }
     } finally {
       setSubmitting(false)
     }

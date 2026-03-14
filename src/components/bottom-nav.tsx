@@ -31,7 +31,10 @@ export function BottomNav() {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending')
         .gte('date', monthStart)
-        .then(({ count }) => { if (count != null) setPendingCount(count) })
+        .then(({ count, error }) => {
+          if (error) console.error('Pending requests count failed:', error.message)
+          else if (count != null) setPendingCount(count)
+        })
     }
   }, [pathname])
 
