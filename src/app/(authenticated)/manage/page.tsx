@@ -230,11 +230,12 @@ function ShiftConfirmTab() {
       return
     }
     // upsertのonConflict不整合を避けるためdelete→insertを使用
-    await supabase.from('shifts_fixed')
+    const { error: delErr } = await supabase.from('shifts_fixed')
       .delete()
       .eq('staff_id', req.staff_id)
       .eq('date', req.date)
       .eq('type', type)
+    if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); setConfirming(false); return }
     const { error } = await supabase.from('shifts_fixed').insert({
       date: req.date, shop_id: shopId, type,
       staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
@@ -246,7 +247,8 @@ function ShiftConfirmTab() {
 
   const handleRemoveFixed = async (fixedId: number) => {
     setConfirming(true)
-    await supabase.from('shifts_fixed').delete().eq('id', fixedId)
+    const { error } = await supabase.from('shifts_fixed').delete().eq('id', fixedId)
+    if (error) { setMessage('取り消しに失敗: ' + error.message); setConfirming(false); return }
     setMessage('シフトを取り消しました')
     fetchAll()
     setConfirming(false)
@@ -275,10 +277,11 @@ function ShiftConfirmTab() {
     setMessage('')
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs)
     // この日のスタッフの既存確定をすべて削除してからinsert
-    await supabase.from('shifts_fixed')
+    const { error: delErr } = await supabase.from('shifts_fixed')
       .delete()
       .eq('staff_id', req.staff_id)
       .eq('date', req.date)
+    if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); setConfirming(false); return }
     const results = await Promise.all(
       splits.map((s) =>
         supabase.from('shifts_fixed').insert(
@@ -301,12 +304,16 @@ function ShiftConfirmTab() {
     const alreadyClosed = closedDates.includes(dateStr)
     if (alreadyClosed) {
       // 定休日解除: closed_datesから削除 + shift_requestsをpendingに戻す
-      await supabase.from('closed_dates').delete().eq('date', dateStr)
-      await supabase.from('shift_requests').update({ status: 'pending' }).eq('date', dateStr).eq('status', 'rejected')
+      const { error: delErr } = await supabase.from('closed_dates').delete().eq('date', dateStr)
+      if (delErr) { setMessage('定休日解除に失敗: ' + delErr.message); return }
+      const { error: updErr } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('date', dateStr).eq('status', 'rejected')
+      if (updErr) { setMessage('申請ステータス復元に失敗: ' + updErr.message); return }
     } else {
       // 定休日設定: closed_datesに追加 + shift_requestsをrejectedに変更（削除しない）
-      await supabase.from('closed_dates').insert({ date: dateStr })
-      await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr)
+      const { error: insErr } = await supabase.from('closed_dates').insert({ date: dateStr })
+      if (insErr) { setMessage('定休日設定に失敗: ' + insErr.message); return }
+      const { error: updErr } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr)
+      if (updErr) { setMessage('申請却下に失敗: ' + updErr.message); return }
     }
     await fetchAll()
   }
