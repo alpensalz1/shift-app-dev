@@ -593,13 +593,15 @@ function ClosedDatesTab() {
 
   const handleAdd = async () => {
     if (!newDate) return
-    await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
+    const { error } = await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
+    if (error) { alert('休業日追加に失敗しました: ' + error.message); return }
     setNewDate(fmtDate(new Date())); setNewNote(''); setNewShopId('')
     fetch_()
   }
 
   const handleDel = async (id: number) => {
-    await supabase.from('closed_dates').delete().eq('id', id)
+    const { error } = await supabase.from('closed_dates').delete().eq('id', id)
+    if (error) { alert('休業日削除に失敗しました: ' + error.message); return }
     fetch_()
   }
 
