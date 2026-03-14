@@ -157,6 +157,8 @@ function LaborCostTab({ month }: { month: string }) {
 
   useEffect(() => {
     let cancelled = false
+    // 月切替時に古いデータが一瞬表示されないよう即座にローディング状態にリセット
+    setLoading(true)
     const [y, m] = month.split('-').map(Number)
     const startDate = `${month}-01`
     const endDate = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
@@ -496,6 +498,8 @@ function FulfillmentTab({ month }: { month: string }) {
 
   useEffect(() => {
     let cancelled = false
+    // 月切替時に古いデータが一瞬表示されないよう即座にローディング状態にリセット
+    setLoading(true)
     const [y, m] = month.split('-').map(Number)
     const start = `${month}-01`
     const end = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
