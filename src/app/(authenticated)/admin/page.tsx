@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
@@ -255,12 +255,17 @@ function StaffManagementTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingWage, setEditingWage] = useState<{ staffId: number; wage: string; effectiveFrom: string } | null>(null)
+  // handleSoftDelete/handleToggleType は saving ガードがないため複数の fetchData が並走する可能性がある
+  // fetchVersionRef で古い fetch 結果が新しい fetch 結果を上書きしないよう管理する
+  const fetchVersionRef = useRef(0)
 
   const fetchData = useCallback(async () => {
+    const version = ++fetchVersionRef.current
     const [sR, wR] = await Promise.all([
       supabase.from('staffs').select('*').is('deleted_at', null).order('id'),
       supabase.from('wage_history').select('*').order('effective_from', { ascending: false }),
     ])
+    if (fetchVersionRef.current !== version) return
     if (sR.error) console.error('staffs取得失敗:', sR.error.message)
     else setStaffs(sR.data || [])
     if (wR.error) console.error('wage_history取得失敗:', wR.error.message)
@@ -628,12 +633,17 @@ function ClosedDatesTab() {
   const [newNote, setNewNote] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // handleDel は saving ガードがないため複数の fetch_ が並走する可能性がある
+  // fetchVersionRef で古い fetch 結果が新しい fetch 結果を上書きしないよう管理する
+  const fetchVersionRef = useRef(0)
 
   const fetch_ = useCallback(async () => {
+    const version = ++fetchVersionRef.current
     const [cR, sR] = await Promise.all([
       supabase.from('closed_dates').select('*').order('date', { ascending: false }),
       supabase.from('shops').select('*'),
     ])
+    if (fetchVersionRef.current !== version) return
     if (cR.error) console.error('closed_dates取得失敗:', cR.error.message)
     else setClosedDates(cR.data || [])
     if (sR.error) console.error('shops取得失敗:', sR.error.message)
