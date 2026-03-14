@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
@@ -49,11 +50,26 @@ function getWageForDate(wageHistories: WageHistory[], staffId: number, date: str
 }
 
 export default function AdminPage() {
+  const router = useRouter()
+  const [staffLoaded, setStaffLoaded] = useState(false)
+  const [isAuthorized, setIsAuthorized] = useState(false)
   const [tab, setTab] = useState<Tab>('labor')
   const [month, setMonth] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
+
+  useEffect(() => {
+    const staff = getStoredStaff()
+    const authorized = !!staff && (
+      staff.employment_type === '社員' ||
+      staff.employment_type === '役員' ||
+      staff.employment_type === 'システム管理者'
+    )
+    setIsAuthorized(authorized)
+    setStaffLoaded(true)
+    if (!authorized) router.replace('/home')
+  }, [router])
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: 'labor', label: '人件費', icon: DollarSign },
@@ -71,6 +87,8 @@ export default function AdminPage() {
 
   const [y, m] = month.split('-').map(Number)
   const monthLabel = `${y}年${m}月`
+
+  if (!staffLoaded || !isAuthorized) return null
 
   return (
     <div className="px-4 pt-3 pb-24 space-y-4">
@@ -554,8 +572,8 @@ function FulfillmentTab({ month }: { month: string }) {
                   人員不足（{shortages.length}件）
                 </p>
                 <div className="max-h-28 overflow-y-auto space-y-0.5 mt-1">
-                  {shortages.slice(0, 8).map((s, j) => (
-                    <p key={j} className="text-[10px] text-muted-foreground pl-4 tabular-nums">
+                  {shortages.slice(0, 8).map((s) => (
+                    <p key={`${s.date}-${s.type}`} className="text-[10px] text-muted-foreground pl-4 tabular-nums">
                       {s.date} {s.type}: {s.actual}/{s.required}名
                     </p>
                   ))}

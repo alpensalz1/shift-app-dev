@@ -131,6 +131,17 @@ function ShiftConfirmTab() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // 月切替時に選択日付・メッセージをリセット
+  useEffect(() => {
+    setSelectedDate(null)
+    setMessage('')
+  }, [monthStart])
+
+  // 月切替時に自動遷移フラグをリセット（再度トリガされるよう）
+  useEffect(() => {
+    autoAdvancedRef.current = false
+  }, [monthStart])
+
   // 当月全确定済なら翁月へ自動遅移
   useEffect(() => {
     if (!loading && !autoAdvancedRef.current) {
@@ -315,10 +326,10 @@ function ShiftConfirmTab() {
       const { error: updErr } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('date', dateStr).eq('status', 'rejected')
       if (updErr) { setMessage('申請ステータス復元に失敗: ' + updErr.message); return }
     } else {
-      // 定休日設定: closed_datesに追加 + shift_requestsをrejectedに変更（削除しない）
+      // 定休日設定: closed_datesに追加 + pending申請のみrejectedに変更（既にrejectedのものは触らない）
       const { error: insErr } = await supabase.from('closed_dates').insert({ date: dateStr })
       if (insErr) { setMessage('定休日設定に失敗: ' + insErr.message); return }
-      const { error: updErr } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr)
+      const { error: updErr } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr).eq('status', 'pending')
       if (updErr) { setMessage('申請却下に失敗: ' + updErr.message); return }
     }
     await fetchAll()
@@ -1460,7 +1471,7 @@ export function StaffManagementTab() {
   )
 }
 
-type ManageTab = 'confirm' | 'rules' | 'auto' | 'salary' | 'staff'
+type ManageTab = 'confirm' | 'rules' | 'auto'
 
 export default function ManagePage() {
   const router = useRouter()
