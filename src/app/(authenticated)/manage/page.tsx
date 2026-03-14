@@ -73,14 +73,15 @@ function autoSplitShift(
 ): Array<{ type: '仕込み' | '営業'; start_time: string; end_time: string }> {
   const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
   if (!shikomiCfg) return [{ type: '営業', start_time: startTime, end_time: endTime }]
-  const split5 = shikomiCfg.default_end_time.substring(0, 5)  // "17:00" or "18:00"
+  const split5 = shikomiCfg.default_end_time.substring(0, 5)  // "17:00" or "18:00"（HH:MM正規化）
   const start5 = startTime.substring(0, 5)
   const end5 = endTime.substring(0, 5)
   if (start5 >= split5) return [{ type: '営業', start_time: startTime, end_time: endTime }]
   if (end5 <= split5) return [{ type: '仕込み', start_time: startTime, end_time: endTime }]
+  // shift_config の時刻はDB上 HH:MM:SS 形式のため substring(0,5) で HH:MM に統一
   return [
-    { type: '仕込み', start_time: startTime, end_time: shikomiCfg.default_end_time },
-    { type: '営業', start_time: shikomiCfg.default_end_time, end_time: endTime },
+    { type: '仕込み', start_time: startTime, end_time: split5 },
+    { type: '営業', start_time: split5, end_time: endTime },
   ]
 }
 
@@ -732,20 +733,20 @@ function AutoGenerateTab() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // デフォルト時間を取得
+  // デフォルト時間を取得（shift_config は HH:MM:SS 形式のため HH:MM に正規化して返す）
   const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
     // shift_config の仕込みレコードは default_end_time が仕込み/営業の境界時刻を示す
     // default_start_time と default_end_time が同値の場合はconfig設定不備のため fallback を使用
     const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
     const eigyoCfg = configs.find((c) => c.shop_id === shopId && c.type === '営業')
-    const splitTime = shikomiCfg?.default_end_time ?? '18:00:00'
-    const closeTime = eigyoCfg?.default_end_time ?? '24:00:00'
+    const splitTime = (shikomiCfg?.default_end_time ?? '18:00:00').substring(0, 5)
+    const closeTime = (eigyoCfg?.default_end_time ?? '24:00:00').substring(0, 5)
     if (type === '仕込み') {
-      const startTime = shikomiCfg?.default_start_time ?? '10:00:00'
+      const startTime = (shikomiCfg?.default_start_time ?? '10:00:00').substring(0, 5)
       // startTime < splitTime なら正常なconfig、同値ならconfig不備なのでfallback
       return startTime < splitTime
         ? { start: startTime, end: splitTime }
-        : { start: '10:00:00', end: splitTime }
+        : { start: '10:00', end: splitTime }
     } else {
       return { start: splitTime, end: closeTime }
     }
