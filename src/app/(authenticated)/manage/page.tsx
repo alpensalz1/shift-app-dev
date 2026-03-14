@@ -932,11 +932,12 @@ function AutoGenerateTab() {
       ...allExecutives.map(s => s.id),
     ]
     if (employeeIds.length > 0) {
-      await supabase.from('shifts_fixed')
+      const { error: delErr } = await supabase.from('shifts_fixed')
         .delete()
         .gte('date', periodStart)
         .lte('date', periodEnd)
         .in('staff_id', employeeIds)
+      if (delErr) { setMessage('保存に失敗（削除エラー）: ' + delErr.message); setSaving(false); return }
     }
     const insertRows = preview.map((r) => ({
       date: r.date, shop_id: r.shop_id, type: r.type,
