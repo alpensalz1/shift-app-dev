@@ -15,6 +15,8 @@ export function BottomNav() {
   const [showSalary, setShowSalary] = useState(false)
 
   useEffect(() => {
+    // pathname 変更時の並走リクエストで古い count が新しい count を上書きしないよう cancellation フラグを使用
+    let cancelled = false
     const staff = getStoredStaff()
     const manager =
       staff?.employment_type === '社員' ||
@@ -32,10 +34,12 @@ export function BottomNav() {
         .eq('status', 'pending')
         .gte('date', monthStart)
         .then(({ count, error }) => {
+          if (cancelled) return
           if (error) console.error('Pending requests count failed:', error.message)
           else if (count != null) setPendingCount(count)
         })
     }
+    return () => { cancelled = true }
   }, [pathname])
 
   const navItems = [
