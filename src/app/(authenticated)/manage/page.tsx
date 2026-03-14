@@ -248,10 +248,16 @@ function ShiftConfirmTab() {
       setConfirming(false)
       return
     }
-    const { error } = await supabase.from('shifts_fixed').upsert({
+    // upsertのonConflict不整合を避けるためdelete→insertを使用
+    await supabase.from('shifts_fixed')
+      .delete()
+      .eq('staff_id', req.staff_id)
+      .eq('date', req.date)
+      .eq('type', type)
+    const { error } = await supabase.from('shifts_fixed').insert({
       date: req.date, shop_id: shopId, type,
       staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
-    }, { onConflict: 'staff_id,date,type' })
+    })
     if (error) setMessage('確定に失敗: ' + error.message)
     else { setMessage(`${req.staffs.name}のシフトを確定しました（${SHOP_NAMES[shopId]} / ${type}）`); fetchAll() }
     setConfirming(false)
@@ -268,22 +274,17 @@ function ShiftConfirmTab() {
   const handleConfirmBoth = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
     setMessage('')
-    // 仕込み・営業両方の時間境界バリデーション
-    const vShikomi = validateShiftTime(configs, shopId, '仕込み', req.start_time, req.end_time)
-    const vEigyo = validateShiftTime(configs, shopId, '営業', req.start_time, req.end_time)
-    if (!vShikomi.valid || !vEigyo.valid) {
-      setMessage(vShikomi.message || vEigyo.message)
-      setConfirming(false)
-      return
-    }
+    // 既存の仕込み・営業レコードを削除してからinsert
+    await Promise.all([
+      supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date).eq('type', '仕込み'),
+      supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date).eq('type', '営業'),
+    ])
     const [r1, r2] = await Promise.all([
-      supabase.from('shifts_fixed').upsert(
-        { date: req.date, shop_id: shopId, type: '仕込み', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time },
-        { onConflict: 'staff_id,date,type' }
+      supabase.from('shifts_fixed').insert(
+        { date: req.date, shop_id: shopId, type: '仕込み', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time }
       ),
-      supabase.from('shifts_fixed').upsert(
-        { date: req.date, shop_id: shopId, type: '営業', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time },
-        { onConflict: 'staff_id,date,type' }
+      supabase.from('shifts_fixed').insert(
+        { date: req.date, shop_id: shopId, type: '営業', staff_id: req.staff_id, start_time: req.start_time, end_time: req.end_time }
       ),
     ])
     if (r1.error || r2.error) setMessage('確定に失敗: ' + (r1.error?.message ?? r2.error?.message ?? ''))
@@ -313,11 +314,15 @@ function ShiftConfirmTab() {
     setConfirming(true)
     setMessage('')
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs)
+    // この日のスタッフの既存確定をすべて削除してからinsert
+    await supabase.from('shifts_fixed')
+      .delete()
+      .eq('staff_id', req.staff_id)
+      .eq('date', req.date)
     const results = await Promise.all(
       splits.map((s) =>
-        supabase.from('shifts_fixed').upsert(
-          { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time },
-          { onConflict: 'staff_id,date,type' }
+        supabase.from('shifts_fixed').insert(
+          { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time }
         )
       )
     )
@@ -900,19 +905,24 @@ function AutoGenerateTab() {
     if (!preview || preview.length === 0) return
     setSaving(true)
     setMessage('')
-    // 自動生成時の店舗別時間境界バリデーション
-    const validPreview = preview.filter(r => {
-      const v = validateShiftTime(configs, r.shop_id, r.type, r.start_time, r.end_time)
-      return v.valid
-    })
-    if (validPreview.length < preview.length) {
-      setMessage(`時間境界違反の${preview.length - validPreview.length}件を除外しました`)
-    }
-    const upsertRows = validPreview.map((r) => ({
+    // 対象スタッフの期間内の既存確定シフトを削除してからinsert
+    const periodStart = format(period.start, 'yyyy-MM-dd')
+    const periodEnd = format(period.end, 'yyyy-MM-dd')
+    const staffIds = Array.from(new Set(preview.map(r => r.staff_id)))
+    await Promise.all(
+      staffIds.map(staffId =>
+        supabase.from('shifts_fixed')
+          .delete()
+          .eq('staff_id', staffId)
+          .gte('date', periodStart)
+          .lte('date', periodEnd)
+      )
+    )
+    const insertRows = preview.map((r) => ({
       date: r.date, shop_id: r.shop_id, type: r.type,
       staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
     }))
-    const { error } = await supabase.from('shifts_fixed').upsert(upsertRows, { onConflict: 'staff_id,date,type' })
+    const { error } = await supabase.from('shifts_fixed').insert(insertRows)
     if (error) setMessage('保存に失敗: ' + error.message)
     else { setMessage(`${preview.length}件のシフトを確定しました`); setPreview(null) }
     setSaving(false)
