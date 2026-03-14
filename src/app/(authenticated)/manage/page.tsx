@@ -257,7 +257,7 @@ function ShiftConfirmTab() {
       date: req.date, shop_id: shopId, type,
       staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
     })
-    if (error) setMessage('確定に失敗: ' + error.message)
+    if (error) { setMessage('確定に失敗: ' + error.message); fetchAll() } // 削除後にinsertが失敗した場合でもUIを最新状態に更新
     else { setMessage(`${req.staffs.name}のシフトを確定しました（${SHOP_NAMES[shopId]} / ${type}）`); fetchAll() }
     setConfirming(false)
   }
@@ -309,6 +309,7 @@ function ShiftConfirmTab() {
     const errResult = results.find((r) => r.error)
     if (errResult?.error) {
       setMessage('確定に失敗: ' + errResult.error.message)
+      fetchAll() // 削除後にinsertが失敗した場合でもUIを最新状態に更新
     } else {
       const typesStr = splits.map((s) => s.type).join('・')
       setMessage(`${req.staffs.name}のシフトを自動分割確定しました（${SHOP_NAMES[shopId]} / ${typesStr}）`)
