@@ -1120,7 +1120,7 @@ function getWageForDateManage(wageHistories: WageHistory[], staffId: number, dat
   return records.length > 0 ? records[0].wage : null
 }
 
-export function LaborCostTab() {
+function LaborCostTab() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [loading, setLoading] = useState(false)
   const [staffs, setStaffs] = useState<Staff[]>([])
@@ -1222,7 +1222,7 @@ export function LaborCostTab() {
 // ==============================================
 // タブスタッフ管理
 // ==============================================
-export function StaffManagementTab() {
+function StaffManagementTab() {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState<number | null>(null)
