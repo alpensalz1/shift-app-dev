@@ -142,7 +142,7 @@ function ShiftConfirmTab() {
     autoAdvancedRef.current = false
   }, [monthStart])
 
-  // 当月全确定済なら翁月へ自動遅移
+  // 当月全確定済なら翌月へ自動遷移
   useEffect(() => {
     if (!loading && !autoAdvancedRef.current) {
       autoAdvancedRef.current = true
@@ -153,6 +153,9 @@ function ShiftConfirmTab() {
         }
       }
     }
+  // requests/fixedShifts/selectedMonth are intentionally omitted: we only want this to fire
+  // once after loading completes, not on every state change. autoAdvancedRef prevents re-entry.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
   const dateMap = useMemo(() => {

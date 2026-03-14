@@ -251,6 +251,7 @@ function StaffManagementTab() {
   const [newType, setNewType] = useState('アルバイト')
   const [newWage, setNewWage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [editingWage, setEditingWage] = useState<{ staffId: number; wage: string; effectiveFrom: string } | null>(null)
 
   const fetchData = useCallback(async () => {
@@ -268,11 +269,12 @@ function StaffManagementTab() {
   useEffect(() => { fetchData() }, [fetchData])
 
   const handleAddStaff = async () => {
-    if (!newName.trim()) return
+    if (!newName.trim() || saving) return
     const wageNum = parseInt(newWage) || 0
     // ランダムなトークンを生成（日本語名でも安全に使えるよう英数字6文字）
     const token = Math.random().toString(36).slice(2, 8)
 
+    setSaving(true)
     try {
       const { data: inserted, error: insErr } = await supabase.from('staffs').insert({
         name: newName.trim(), token, employment_type: newType, wage: wageNum, is_active: true, shop_id: 1,
@@ -289,6 +291,8 @@ function StaffManagementTab() {
       fetchData()
     } catch (e: any) {
       alert('スタッフ追加に失敗しました: ' + (e.message || ''))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -301,12 +305,13 @@ function StaffManagementTab() {
   }
 
   const handleWageChange = async () => {
-    if (!editingWage) return
+    if (!editingWage || saving) return
     const nw = parseInt(editingWage.wage)
     if (!nw || !editingWage.effectiveFrom) return
 
     const [ey, em, ed] = editingWage.effectiveFrom.split('-').map(Number)
     const prev = new Date(ey, em - 1, ed - 1)
+    setSaving(true)
     try {
       const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
       if (latest) {
@@ -321,6 +326,8 @@ function StaffManagementTab() {
       fetchData()
     } catch (e: any) {
       alert('時給変更に失敗しました: ' + (e.message || ''))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -374,7 +381,7 @@ function StaffManagementTab() {
           </div>
           <button
             onClick={handleAddStaff}
-            disabled={!newName.trim()}
+            disabled={!newName.trim() || saving}
             className="w-full h-9 rounded-lg bg-blue-600 text-white text-xs font-bold transition-all hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed press-effect"
           >
             登録
@@ -463,7 +470,7 @@ function StaffManagementTab() {
                 <button onClick={() => setEditingWage(null)} className="flex-1 h-9 rounded-lg border border-border text-sm font-medium hover:bg-muted/50 transition-colors press-effect">
                   キャンセル
                 </button>
-                <button onClick={handleWageChange} className="flex-1 h-9 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity press-effect">
+                <button onClick={handleWageChange} disabled={saving} className="flex-1 h-9 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed press-effect">
                   保存
                 </button>
               </div>

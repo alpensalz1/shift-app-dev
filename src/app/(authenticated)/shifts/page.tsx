@@ -332,13 +332,15 @@ function PartTimerForm({
     if (entries.length === 0) return
     setSubmitting(true)
     setSubmitError('')
+    const startKey = fmtKey(periodStart)
+    const endKey = fmtKey(periodEnd)
+    let deleteDone = false
     try {
-      const startKey = fmtKey(periodStart)
-      const endKey = fmtKey(periodEnd)
       const { error: delErr } = await supabase
         .from('shift_requests').delete()
         .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey)
       if (delErr) throw new Error('削除エラー: ' + delErr.message)
+      deleteDone = true
       const rows = entries.map(([dk, times]) => ({
         staff_id: staff.id,
         date: dk,
@@ -363,6 +365,15 @@ function PartTimerForm({
       setViewMode('status')
     } catch (e: any) {
       setSubmitError(e.message || '送信に失敗しました。もう一度お試しください。')
+      // DELETE成功後にINSERTが失敗した場合、DBの実態に合わせてUIを更新する
+      if (deleteDone) {
+        const [rr, fr] = await Promise.all([
+          supabase.from('shift_requests').select('*').eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+          supabase.from('shifts_fixed').select('*').eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
+        ])
+        if (!rr.error) setExistingRequests(rr.data || [])
+        if (!fr.error) setFixedShifts(fr.data || [])
+      }
     } finally {
       setSubmitting(false)
     }
