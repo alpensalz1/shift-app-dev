@@ -283,6 +283,7 @@ function PartTimerForm({
 
   // 既存の申請と確定シフトを読み込む
   useEffect(() => {
+    let cancelled = false
     async function load() {
       const startKey = fmtKey(periodStart)
       const endKey = fmtKey(periodEnd)
@@ -292,6 +293,7 @@ function PartTimerForm({
         supabase.from('shifts_fixed').select('*')
           .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey),
       ])
+      if (cancelled) return
       if (reqRes.error) {
         setSubmitError('データ読み込みに失敗しました: ' + reqRes.error.message)
       } else if (reqRes.data && reqRes.data.length > 0) {
@@ -310,6 +312,7 @@ function PartTimerForm({
       setLoadingExisting(false)
     }
     load()
+    return () => { cancelled = true }
   }, [staff.id, periodStart, periodEnd])
 
   function toggleDay(dk: string) {
@@ -589,6 +592,7 @@ function FullTimeForm({
 
   // 既存の off_requests を読み込む
   useEffect(() => {
+    let cancelled = false
     async function load() {
       const { data, error } = await supabase
         .from('off_requests')
@@ -596,6 +600,7 @@ function FullTimeForm({
         .eq('staff_id', staff.id)
         .gte('date', fmtKey(periodStart))
         .lte('date', fmtKey(periodEnd))
+      if (cancelled) return
       if (error) {
         setSubmitError('データ読み込みに失敗しました: ' + error.message)
       } else if (data && data.length > 0) {
@@ -608,6 +613,7 @@ function FullTimeForm({
       setLoadingExisting(false)
     }
     load()
+    return () => { cancelled = true }
   }, [staff.id, periodStart, periodEnd])
 
   function cycleChoice(dk: string) {
