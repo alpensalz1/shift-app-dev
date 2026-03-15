@@ -395,6 +395,27 @@ function PartTimerForm({
     )
   }
 
+  async function handleWithdraw() {
+    if (!window.confirm('提出済みのシフト希望を全て取り消しますか？\nこの操作は取り消せません。')) return
+    setSubmitting(true)
+    setSubmitError('')
+    const startKey = fmtKey(periodStart)
+    const endKey = fmtKey(periodEnd)
+    try {
+      const { error: delErr } = await supabase
+        .from('shift_requests').delete()
+        .eq('staff_id', staff.id).gte('date', startKey).lte('date', endKey)
+      if (delErr) throw new Error('取り消しエラー: ' + delErr.message)
+      setExistingRequests([])
+      setDayTimeMap({})
+      setViewMode('form')
+    } catch (e: any) {
+      setSubmitError(e.message || '取り消しに失敗しました。もう一度お試しください。')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   if (viewMode === 'status') {
     return (
       <StatusView
@@ -403,6 +424,8 @@ function PartTimerForm({
         periodStart={periodStart}
         periodEnd={periodEnd}
         onResubmit={() => setViewMode('form')}
+        onWithdraw={handleWithdraw}
+        withdrawing={submitting}
       />
     )
   }
@@ -937,12 +960,16 @@ function StatusView({
   periodStart,
   periodEnd,
   onResubmit,
+  onWithdraw,
+  withdrawing,
 }: {
   existingRequests: ShiftRequest[]
   fixedShifts: ShiftFixed[]
   periodStart: Date
   periodEnd: Date
   onResubmit: () => void
+  onWithdraw: () => void
+  withdrawing?: boolean
 }) {
   const days = useMemo(
     () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
@@ -1148,13 +1175,22 @@ function StatusView({
         </div>
       )}
 
-      {/* 修正・再提出ボタン */}
-      <button
-        onClick={onResubmit}
-        className="w-full h-11 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
-      >
-        シフト希望を修正・再提出する
-      </button>
+      {/* 修正・再提出 / 全取り消しボタン */}
+      <div className="space-y-2">
+        <button
+          onClick={onResubmit}
+          className="w-full h-11 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
+        >
+          シフト希望を修正・再提出する
+        </button>
+        <button
+          onClick={onWithdraw}
+          disabled={withdrawing}
+          className="w-full h-11 rounded-xl border border-red-200 text-sm font-medium text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {withdrawing ? '取り消し中…' : '申請を全取り消しする'}
+        </button>
+      </div>
     </div>
   )
 }
