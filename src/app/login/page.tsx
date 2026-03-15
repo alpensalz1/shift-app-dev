@@ -143,32 +143,73 @@ function ParticleCanvas({ active }: { active: boolean }) {
     canvas.width = window.innerWidth
     canvas.height = window.innerHeight
 
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!?<>{}[]'
+    // Half-width katakana + ASCII — pure Matrix alphabet
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789@#$%<>{}[]'
     const cx = canvas.width / 2
     const cy = canvas.height / 2
 
-    // 70 particles fly from center
-    const particles = Array.from({ length: 70 }, () => {
-      const angle = Math.random() * Math.PI * 2
-      const speed = 3 + Math.random() * 8
-      const size = 10 + Math.random() * 14
-      const life = 0.8 + Math.random() * 0.7  // seconds
-      const r = Math.random()
-      const color = r < 0.6
-        ? `hsl(${130 + Math.random() * 40},100%,${50 + Math.random() * 30}%)`
-        : r < 0.85
-          ? '#ffffff'
-          : `hsl(${180 + Math.random() * 40},100%,70%)`
-      return {
-        x: cx, y: cy,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        char: chars[Math.floor(Math.random() * chars.length)],
-        size, life, maxLife: life, color,
-        rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.3,
+    // Color: white-hot → yellow-green → Matrix green, all fade to transparent
+    const matrixColor = (progress: number, alpha: number): string => {
+      if (progress < 0.12) {
+        // 白熱 → 黄緑
+        const t = progress / 0.12
+        return `rgba(${Math.round(255 - t * 100)},255,${Math.round(255 * (1 - t))},${alpha})`
+      } else if (progress < 0.35) {
+        // 黄緑 → Matrix緑
+        const t = (progress - 0.12) / 0.23
+        return `rgba(${Math.round(155 * (1 - t))},255,0,${alpha})`
+      } else {
+        // Matrix緑 (pure)
+        return `rgba(0,255,65,${alpha})`
       }
-    })
+    }
+
+    // Shockwave rings: 2 rings expand from center
+    const maxR = Math.hypot(canvas.width, canvas.height) * 0.7
+    const rings = [
+      { r: 0, speed: 22, maxR, lineW: 2.5, bright: 1.0 },
+      { r: 0, speed: 14, maxR: maxR * 0.6, lineW: 1.2, bright: 0.55 },
+    ]
+
+    // Particle interface
+    interface Particle {
+      x: number; y: number
+      vx: number; vy: number
+      char: string
+      charTick: number        // frames until next char change
+      size: number
+      maxLife: number
+      spawnAt: number         // elapsed seconds when this particle activates
+      rotation: number
+      rotSpeed: number
+      trail: { x: number; y: number }[]
+    }
+
+    const makeWave = (n: number, spawnAt: number, sMin: number, sMax: number, szMin: number, szMax: number): Particle[] =>
+      Array.from({ length: n }, () => {
+        const angle = Math.random() * Math.PI * 2
+        const spd = sMin + Math.random() * (sMax - sMin)
+        return {
+          x: cx, y: cy,
+          vx: Math.cos(angle) * spd,
+          vy: Math.sin(angle) * spd,
+          char: chars[Math.floor(Math.random() * chars.length)],
+          charTick: Math.floor(3 + Math.random() * 7),
+          size: szMin + Math.random() * (szMax - szMin),
+          maxLife: 1.1 + Math.random() * 0.9,
+          spawnAt,
+          rotation: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 0.18,
+          trail: [],
+        }
+      })
+
+    // 3波：Wave1 大粒・高速、Wave2 中粒・中速、Wave3 小粒・遅め
+    const allParticles: Particle[] = [
+      ...makeWave(50, 0,    6, 15, 13, 22),
+      ...makeWave(45, 0.14, 4, 11, 10, 17),
+      ...makeWave(35, 0.29, 2,  7,  8, 13),
+    ]
 
     const start = performance.now()
     let rafId: number
@@ -177,26 +218,81 @@ function ParticleCanvas({ active }: { active: boolean }) {
       const elapsed = (now - start) / 1000
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      let alive = false
-      for (const p of particles) {
-        const age = elapsed
+      // ── Shockwave rings ──
+      let ringsAlive = false
+      for (const ring of rings) {
+        ring.r += ring.speed
+        if (ring.r < ring.maxR) {
+          ringsAlive = true
+          const alpha = ring.bright * (1 - ring.r / ring.maxR)
+          ctx.beginPath()
+          ctx.arc(cx, cy, ring.r, 0, Math.PI * 2)
+          ctx.strokeStyle = `rgba(0,255,65,${alpha})`
+          ctx.lineWidth = ring.lineW
+          ctx.shadowColor = '#00ff41'
+          ctx.shadowBlur = 18
+          ctx.stroke()
+          ctx.shadowBlur = 0
+        }
+      }
+
+      // ── Particles ──
+      let particlesAlive = false
+      for (const p of allParticles) {
+        const age = elapsed - p.spawnAt
+        if (age < 0) continue
         if (age >= p.maxLife) continue
-        alive = true
+        particlesAlive = true
+
         const progress = age / p.maxLife
-        const alpha = 1 - progress
+        // fade-in 0→0.08, hold, fade-out 0.25→1.0
+        const alpha = progress < 0.08
+          ? progress / 0.08
+          : Math.pow(1 - progress, 1.6)
+
+        // Physics
         p.x += p.vx
         p.y += p.vy
-        p.vy += 0.18  // gravity
-        p.vx *= 0.985  // air resistance
+        p.vy += 0.10   // gravity
+        p.vx *= 0.990  // air resistance
         p.rotation += p.rotSpeed
 
+        // Trail: keep last 10 positions
+        p.trail.push({ x: p.x, y: p.y })
+        if (p.trail.length > 10) p.trail.shift()
+
+        // Char morph every charTick frames
+        p.charTick--
+        if (p.charTick <= 0) {
+          p.char = chars[Math.floor(Math.random() * chars.length)]
+          p.charTick = Math.floor(3 + Math.random() * 7)
+        }
+
+        // ── Draw trail ──
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        for (let t = 0; t < p.trail.length - 1; t++) {
+          const tf = t / p.trail.length   // 0=oldest 1=newest
+          const trailAlpha = alpha * tf * tf * 0.45  // quadratic fade
+          const trailSize = p.size * (0.35 + tf * 0.55)
+          ctx.save()
+          ctx.globalAlpha = trailAlpha
+          ctx.fillStyle = matrixColor(progress, 1)
+          ctx.shadowColor = '#00ff41'
+          ctx.shadowBlur = 6
+          ctx.font = `bold ${trailSize}px monospace`
+          ctx.fillText(p.char, p.trail[t].x, p.trail[t].y)
+          ctx.restore()
+        }
+
+        // ── Draw main char ──
         ctx.save()
         ctx.translate(p.x, p.y)
         ctx.rotate(p.rotation)
         ctx.globalAlpha = alpha
-        ctx.fillStyle = p.color
-        ctx.shadowColor = p.color
-        ctx.shadowBlur = 8 + (1 - progress) * 12
+        ctx.fillStyle = matrixColor(progress, 1)
+        ctx.shadowColor = progress < 0.25 ? '#afffdf' : '#00ff41'
+        ctx.shadowBlur = 20 + (1 - progress) * 25
         ctx.font = `bold ${p.size}px monospace`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -204,7 +300,7 @@ function ParticleCanvas({ active }: { active: boolean }) {
         ctx.restore()
       }
 
-      if (alive) {
+      if (ringsAlive || particlesAlive) {
         rafId = requestAnimationFrame(draw)
       }
     }
