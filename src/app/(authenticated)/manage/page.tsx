@@ -825,7 +825,7 @@ function AutoGenerateTab() {
     if (configRes.error) console.error('shift_config取得失敗:', configRes.error.message)
     else if (configRes.data) setConfigs(configRes.data)
     if (closedRes.error) console.error('closed_dates取得失敗:', closedRes.error.message)
-    else if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date))
+    else if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date.substring(0, 10)))
     setLoading(false)
   }, [period.start.toISOString(), period.end.toISOString()])
 
