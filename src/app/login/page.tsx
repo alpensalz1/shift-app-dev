@@ -196,11 +196,11 @@ function MatrixAdminLogin({
 }) {
   const [phase, setPhase] = useState<'boot' | 'input' | 'auth' | 'success'>('boot')
 
-  // turbo 開始 → success フェーズへ切替 → 1500ms 後に画面遷移
+  // turbo 開始 → success フェーズへ切替 → 4500ms 後に画面遷移
   useEffect(() => {
     if (!turbo) return
     setPhase('success')
-    const timer = setTimeout(() => onTurboDone?.(), 1500)
+    const timer = setTimeout(() => onTurboDone?.(), 4500)
     return () => clearTimeout(timer)
   }, [turbo, onTurboDone])
   const inputRef = useRef<HTMLInputElement>(null)
@@ -273,13 +273,14 @@ function MatrixAdminLogin({
         }
         @keyframes issaGlow {
           0%   { transform: scale(0.4); opacity: 0; }
-          40%  { opacity: 1; }
-          100% { transform: scale(6); opacity: 0.9; }
+          30%  { opacity: 1; }
+          100% { transform: scale(7); opacity: 0.9; }
         }
         @keyframes issaFlash {
           0%   { opacity: 0; }
-          45%  { opacity: 0; }
-          75%  { opacity: 0.6; }
+          30%  { opacity: 0; }
+          60%  { opacity: 0.2; }
+          80%  { opacity: 0.55; }
           100% { opacity: 1; }
         }
       `}</style>
@@ -290,12 +291,12 @@ function MatrixAdminLogin({
           {/* 中央から広がる緑グロー */}
           <div className="fixed inset-0 z-30 pointer-events-none" style={{
             background: 'radial-gradient(circle at 50% 50%, rgba(0,255,60,0.75) 0%, rgba(0,200,0,0.25) 40%, transparent 65%)',
-            animation: 'issaGlow 1s ease-out forwards',
+            animation: 'issaGlow 1.8s ease-out forwards',
           }} />
           {/* 全画面ホワイトフラッシュ（ぶわぁぁぁぁ） */}
           <div className="fixed inset-0 z-40 pointer-events-none" style={{
             background: 'linear-gradient(135deg, #00ff44 0%, #ffffff 60%)',
-            animation: 'issaFlash 1.5s ease-in forwards',
+            animation: 'issaFlash 4.5s ease-in forwards',
           }} />
         </>
       )}
