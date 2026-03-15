@@ -127,20 +127,14 @@ function MatrixRain({ turbo = false, lastKeypressRef }: {
   )
 }
 
-/* ── Particle Explosion Canvas ── */
-// shockwaveActive: 衝撃波リングだけ先に発動（ポップアップより前）
-// burstActive:     文字パーティクル爆発（ポップアップと同時）
-function ParticleCanvas({ shockwaveActive, burstActive }: {
-  shockwaveActive: boolean
-  burstActive: boolean
-}) {
+/* ── Shockwave Canvas ── */
+function ShockwaveCanvas({ active }: { active: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const shockStartedRef = useRef(false)
-  const burstStartedRef = useRef(false)
+  const startedRef = useRef(false)
 
-  // shockwave と burst は独立したタイミングで起動 → 同一 canvas に描く
   useEffect(() => {
-    if ((!shockwaveActive && !burstActive)) return
+    if (!active || startedRef.current) return
+    startedRef.current = true
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -148,89 +142,24 @@ function ParticleCanvas({ shockwaveActive, burstActive }: {
 
     canvas.width = window.innerWidth
     canvas.height = window.innerHeight
-
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789@#$%<>{}[]'
     const cx = canvas.width / 2
     const cy = canvas.height / 2
 
-    // 色: 白熱 → 黄緑 → Matrix緑
-    const matrixColor = (progress: number): string => {
-      if (progress < 0.12) {
-        const t = progress / 0.12
-        return `rgb(${Math.round(255 - t * 100)},255,${Math.round(255 * (1 - t))})`
-      } else if (progress < 0.35) {
-        const t = (progress - 0.12) / 0.23
-        return `rgb(${Math.round(155 * (1 - t))},255,0)`
-      }
-      return 'rgb(0,255,65)'
-    }
-
-    // ── Shockwave rings（ゆっくり大きく広がる） ──
-    // speed=8px/frame@60fps → 半径800pxに達するまで ~1.7秒 → ちゃんと見える
     const maxR = Math.hypot(canvas.width, canvas.height) * 0.75
-    const rings = shockwaveActive ? [
-      { r: 4, speed: 8,   maxR,          lineW: 3,   bright: 1.0  },  // 主リング
-      { r: 4, speed: 4.5, maxR: maxR*0.6, lineW: 1.5, bright: 0.5  },  // 遅い内側リング
-      { r: 4, speed: 14,  maxR: maxR*0.4, lineW: 1,   bright: 0.35 },  // 速い小リング（瞬時消え）
-    ] : []
+    const rings = [
+      { r: 4, speed: 8,   maxR,          lineW: 3,   bright: 1.0  },
+      { r: 4, speed: 4.5, maxR: maxR*0.6, lineW: 1.5, bright: 0.5  },
+      { r: 4, speed: 14,  maxR: maxR*0.4, lineW: 1,   bright: 0.35 },
+    ]
 
-    // ── Particles ──
-    interface Particle {
-      x: number; y: number
-      vx: number; vy: number
-      char: string
-      charTick: number
-      size: number
-      maxLife: number
-      spawnAt: number
-      rotation: number
-      rotSpeed: number
-      trail: { x: number; y: number }[]
-    }
-
-    const makeWave = (n: number, spawnAt: number, sMin: number, sMax: number, szMin: number, szMax: number): Particle[] =>
-      Array.from({ length: n }, () => {
-        const angle = Math.random() * Math.PI * 2
-        const spd = sMin + Math.random() * (sMax - sMin)
-        return {
-          x: cx, y: cy,
-          vx: Math.cos(angle) * spd,
-          vy: Math.sin(angle) * spd,
-          char: chars[Math.floor(Math.random() * chars.length)],
-          charTick: Math.floor(10 + Math.random() * 12), // 10-22フレームごと変化（読める速さ）
-          size: szMin + Math.random() * (szMax - szMin),
-          maxLife: 1.3 + Math.random() * 0.9,
-          spawnAt,
-          rotation: Math.random() * Math.PI * 2,
-          rotSpeed: (Math.random() - 0.5) * 0.14,
-          trail: [],
-        }
-      })
-
-    // 3波: 間隔200msずつ → 爆発が重なって見える
-    const allParticles: Particle[] = burstActive ? [
-      ...makeWave(50, 0,    6, 14, 13, 22),  // Wave1: 大粒・高速
-      ...makeWave(45, 0.20, 3, 10, 10, 17),  // Wave2: 中粒・中速
-      ...makeWave(35, 0.40, 2,  6,  8, 13),  // Wave3: 小粒・遅め
-    ] : []
-
-    if (!shockwaveActive) shockStartedRef.current = true
-    if (!burstActive) burstStartedRef.current = true
-
-    const start = performance.now()
     let rafId: number
-
-    const draw = (now: number) => {
-      const elapsed = (now - start) / 1000
+    const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-      // ── Shockwave rings ──
-      let ringsAlive = false
+      let alive = false
       for (const ring of rings) {
         ring.r += ring.speed
         if (ring.r < ring.maxR) {
-          ringsAlive = true
-          // アルファ: 最初は強く、外側に行くほど薄く
+          alive = true
           const alpha = ring.bright * Math.pow(1 - ring.r / ring.maxR, 0.7)
           ctx.beginPath()
           ctx.arc(cx, cy, ring.r, 0, Math.PI * 2)
@@ -242,86 +171,18 @@ function ParticleCanvas({ shockwaveActive, burstActive }: {
           ctx.shadowBlur = 0
         }
       }
-
-      // ── Particles ──
-      let particlesAlive = false
-      for (const p of allParticles) {
-        const age = elapsed - p.spawnAt
-        if (age < 0) continue
-        if (age >= p.maxLife) continue
-        particlesAlive = true
-
-        const progress = age / p.maxLife
-        // fade-in 0→0.06、なだらかに fade-out
-        const alpha = progress < 0.06
-          ? progress / 0.06
-          : Math.pow(1 - progress, 1.4)
-
-        p.x += p.vx
-        p.y += p.vy
-        p.vy += 0.09    // 重力（軽め→長く飛ぶ）
-        p.vx *= 0.992   // 空気抵抗
-        p.rotation += p.rotSpeed
-
-        // Trail（直近12フレーム）
-        p.trail.push({ x: p.x, y: p.y })
-        if (p.trail.length > 12) p.trail.shift()
-
-        // 文字モーフ（10-22フレームごと = 160-370ms）
-        p.charTick--
-        if (p.charTick <= 0) {
-          p.char = chars[Math.floor(Math.random() * chars.length)]
-          p.charTick = Math.floor(10 + Math.random() * 12)
-        }
-
-        const color = matrixColor(progress)
-
-        // ── Trail ──
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        for (let t = 0; t < p.trail.length - 1; t++) {
-          const tf = t / p.trail.length
-          ctx.save()
-          ctx.globalAlpha = alpha * tf * tf * 0.5
-          ctx.fillStyle = color
-          ctx.shadowColor = '#00ff41'
-          ctx.shadowBlur = 5
-          ctx.font = `bold ${p.size * (0.3 + tf * 0.6)}px monospace`
-          ctx.fillText(p.char, p.trail[t].x, p.trail[t].y)
-          ctx.restore()
-        }
-
-        // ── Main char ──
-        ctx.save()
-        ctx.translate(p.x, p.y)
-        ctx.rotate(p.rotation)
-        ctx.globalAlpha = alpha
-        ctx.fillStyle = color
-        ctx.shadowColor = progress < 0.2 ? '#ccffcc' : '#00ff41'
-        ctx.shadowBlur = 18 + (1 - progress) * 22
-        ctx.font = `bold ${p.size}px monospace`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(p.char, 0, 0)
-        ctx.restore()
-      }
-
-      if (ringsAlive || particlesAlive) {
-        rafId = requestAnimationFrame(draw)
-      }
+      if (alive) rafId = requestAnimationFrame(draw)
     }
 
     rafId = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(rafId)
-  // shockwaveActiveまたはburstActiveが変わるたびに再起動
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shockwaveActive, burstActive])
+  }, [active])
 
   return (
     <canvas
       ref={canvasRef}
       className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 34 }}  // ポップアップ(35)より下 → 文字に被らない
+      style={{ zIndex: 34 }}
     />
   )
 }
@@ -575,8 +436,8 @@ function MatrixAdminLogin({
         />
       )}
 
-      {/* ショックウェーブ（先行）＋ パーティクル爆発（ポップアップと同時） */}
-      <ParticleCanvas shockwaveActive={showShockwave} burstActive={showAccepted} />
+      {/* ショックウェーブリング */}
+      <ShockwaveCanvas active={showShockwave} />
 
       {/* PASSCODE ACCEPTED ポップ */}
       {showAccepted && (
