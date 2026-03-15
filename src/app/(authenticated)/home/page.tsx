@@ -145,7 +145,7 @@ function ShopCard({ shopName, shifts, style, currentStaffId, index }: {
 }
 
 export default function HomePage() {
-  const today = useMemo(() => new Date(), [])
+  const today = new Date()
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [shifts, setShifts] = useState<ShiftFixedWithStaff[]>([])
   const [loading, setLoading] = useState(true)

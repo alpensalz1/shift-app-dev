@@ -322,15 +322,15 @@ function StaffManagementTab() {
   const handleWageChange = async () => {
     if (!editingWage || saving) return
     const nw = parseInt(editingWage.wage)
-    if (!nw || !editingWage.effectiveFrom) return
+    if (isNaN(nw) || nw <= 0 || !editingWage.effectiveFrom) return
 
-    const [ey, em, ed] = editingWage.effectiveFrom.split('-').map(Number)
-    const prev = new Date(ey, em - 1, ed - 1)
+    const prevDate = new Date(editingWage.effectiveFrom + 'T00:00:00')
+    prevDate.setDate(prevDate.getDate() - 1)
     setSaving(true)
     try {
       const latest = wageHistories.find(w => w.staff_id === editingWage.staffId && !w.effective_to)
       if (latest) {
-        const { error: updErr } = await supabase.from('wage_history').update({ effective_to: fmtDate(prev) }).eq('id', latest.id)
+        const { error: updErr } = await supabase.from('wage_history').update({ effective_to: fmtDate(prevDate) }).eq('id', latest.id)
         if (updErr) throw new Error('履歴更新エラー: ' + updErr.message)
       }
       const { error: insErr } = await supabase.from('wage_history').insert({ staff_id: editingWage.staffId, wage: nw, effective_from: editingWage.effectiveFrom })
@@ -691,8 +691,8 @@ function ClosedDatesTab() {
   )
 
   const today = fmtDate(new Date())
-  const upcoming = closedDates.filter(cd => cd.date >= today)
-  const past = closedDates.filter(cd => cd.date < today)
+  const upcoming = closedDates.filter(cd => cd.date.substring(0, 10) >= today)
+  const past = closedDates.filter(cd => cd.date.substring(0, 10) < today)
 
   return (
     <div className="space-y-3 animate-fade-in">
@@ -828,7 +828,7 @@ function MonthlyReportTab({ month }: { month: string }) {
 
   albeits.forEach(s => {
     shifts.filter(sh => sh.staff_id === s.id).forEach(sh => {
-      const w = getWageForDate(wH, s.id, sh.date) ?? s.wage
+      const w = getWageForDate(wH, s.id, sh.date.substring(0, 10)) ?? s.wage
       totalWage += calcWage(sh.start_time, sh.end_time, w)
       totalHours += calcHours(sh.start_time, sh.end_time)
       const endStr = sh.end_time || '24:00'
@@ -841,7 +841,7 @@ function MonthlyReportTab({ month }: { month: string }) {
     })
   })
 
-  const avgH = totalShifts > 0 ? shifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) / totalShifts : 0
+  const avgH = totalShifts > 0 ? Math.round(shifts.reduce((sum, s) => sum + calcHours(s.start_time, s.end_time), 0) / totalShifts * 10) / 10 : 0
   const shopStats = shops.map(sp => ({ name: sp.name, count: shifts.filter(s => s.shop_id === sp.id).length }))
 
   const statCards = [
