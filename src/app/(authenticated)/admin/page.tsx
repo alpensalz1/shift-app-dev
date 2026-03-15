@@ -545,10 +545,10 @@ function FulfillmentTab({ month }: { month: string }) {
     let req = 0, fill = 0
     const shortages: { date: string; type: string; required: number; actual: number }[] = []
     dates.forEach(date => {
-      if (closedDates.some(cd => cd.date === date && (!cd.shop_id || cd.shop_id === shop.id))) return
+      if (closedDates.some(cd => cd.date.substring(0, 10) === date && (!cd.shop_id || cd.shop_id === shop.id))) return
       sc.forEach(c => {
         const r = c.required_count
-        const a = shifts.filter(s => s.date === date && s.shop_id === shop.id && s.type === c.type).length
+        const a = shifts.filter(s => s.date.substring(0, 10) === date && s.shop_id === shop.id && s.type === c.type).length
         req += r; fill += Math.min(a, r)
         if (a < r) shortages.push({ date, type: c.type, required: r, actual: a })
       })
@@ -809,7 +809,7 @@ function MonthlyReportTab({ month }: { month: string }) {
   const ml = `${y}年${m}月`
   const albeits = staffs.filter(s => s.employment_type === 'アルバイト' || s.employment_type === '長期')
   const totalShifts = shifts.length
-  const uniqueDays = new Set(shifts.map(s => s.date)).size
+  const uniqueDays = new Set(shifts.map(s => s.date.substring(0, 10))).size
   let totalWage = 0, totalHours = 0, nightH = 0
 
   albeits.forEach(s => {
