@@ -314,7 +314,7 @@ function MatrixAdminLogin({
               ✓ AUTHENTICATION COMPLETE
             </p>
             <p style={{ color: '#ffffff', fontFamily: 'monospace', fontSize: '26px', fontWeight: 'bold', letterSpacing: '0.08em' }}>
-              PASSCODE ACCEPTED.
+              PASSCODE ACCEPTED ^_^
             </p>
           </div>
         </div>
