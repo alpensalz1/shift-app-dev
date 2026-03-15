@@ -10,7 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { CalendarDays, Loader2 } from 'lucide-react'
 
 /* ── Matrix Rain Canvas ── */
-function MatrixRain({ turbo = false }: { turbo?: boolean }) {
+function MatrixRain({ turbo = false, lastKeypressRef }: {
+  turbo?: boolean
+  lastKeypressRef?: React.MutableRefObject<number>
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const turboRef = useRef(false)
   const turboStartRef = useRef<number | null>(null)
@@ -50,6 +53,12 @@ function MatrixRain({ turbo = false }: { turbo?: boolean }) {
       const speedMult = 1 + t * 11   // 1x → 12x
       const brightness = t           // 0=緑 → 1=白
 
+      // キータイプフィードバック: 直近150ms以内の入力でスピード+光バースト
+      const sinceKey = lastKeypressRef?.current ? Date.now() - lastKeypressRef.current : 9999
+      const keyPulse = sinceKey < 150 ? (1 - sinceKey / 150) : 0
+      const effectiveSpeed = speedMult + keyPulse * 5
+      const keyBright = keyPulse * 0.4
+
       // turbo 加速中はトレイルを短く（ハッキリ見せる）、最終盤は長め残像でグロー感
       const fadeAlpha = t > 0.7 ? 0.08 : t > 0.2 ? 0.12 : 0.05
       ctx.fillStyle = `rgba(0,0,0,${fadeAlpha})`
@@ -85,7 +94,7 @@ function MatrixRain({ turbo = false }: { turbo?: boolean }) {
         if (drops[i] * fontSize > canvas.height) {
           drops[i] = turboRef.current ? Math.random() * -10 : (Math.random() > 0.975 ? 0 : drops[i])
         }
-        drops[i] += speedMult
+        drops[i] += effectiveSpeed
       }
     }
 
@@ -114,6 +123,101 @@ function MatrixRain({ turbo = false }: { turbo?: boolean }) {
       ref={canvasRef}
       className="fixed inset-0 z-0"
       style={{ background: '#000' }}
+    />
+  )
+}
+
+/* ── Particle Explosion Canvas ── */
+function ParticleCanvas({ active }: { active: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    if (!active || startedRef.current) return
+    startedRef.current = true
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!?<>{}[]'
+    const cx = canvas.width / 2
+    const cy = canvas.height / 2
+
+    // 70 particles fly from center
+    const particles = Array.from({ length: 70 }, () => {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 3 + Math.random() * 8
+      const size = 10 + Math.random() * 14
+      const life = 0.8 + Math.random() * 0.7  // seconds
+      const r = Math.random()
+      const color = r < 0.6
+        ? `hsl(${130 + Math.random() * 40},100%,${50 + Math.random() * 30}%)`
+        : r < 0.85
+          ? '#ffffff'
+          : `hsl(${180 + Math.random() * 40},100%,70%)`
+      return {
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        char: chars[Math.floor(Math.random() * chars.length)],
+        size, life, maxLife: life, color,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.3,
+      }
+    })
+
+    const start = performance.now()
+    let rafId: number
+
+    const draw = (now: number) => {
+      const elapsed = (now - start) / 1000
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      let alive = false
+      for (const p of particles) {
+        const age = elapsed
+        if (age >= p.maxLife) continue
+        alive = true
+        const progress = age / p.maxLife
+        const alpha = 1 - progress
+        p.x += p.vx
+        p.y += p.vy
+        p.vy += 0.18  // gravity
+        p.vx *= 0.985  // air resistance
+        p.rotation += p.rotSpeed
+
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate(p.rotation)
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = p.color
+        ctx.shadowColor = p.color
+        ctx.shadowBlur = 8 + (1 - progress) * 12
+        ctx.font = `bold ${p.size}px monospace`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(p.char, 0, 0)
+        ctx.restore()
+      }
+
+      if (alive) {
+        rafId = requestAnimationFrame(draw)
+      }
+    }
+
+    rafId = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(rafId)
+  }, [active])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 36 }}
     />
   )
 }
@@ -218,19 +322,25 @@ function MatrixAdminLogin({
   const [phase, setPhase] = useState<'boot' | 'input' | 'auth' | 'success'>('boot')
   const [showAccepted, setShowAccepted] = useState(false)  // PASSCODE ACCEPTED. ポップ
   const [flashReady, setFlashReady] = useState(false)       // フラッシュ開始フラグ
+  const [showGlitch, setShowGlitch] = useState(false)       // グリッチフラッシュ
+  const lastKeypressRef = useRef<number>(0)                 // タイピングフィードバック
 
   // turbo 開始のタイムライン:
   //  0ms   → 雨加速
+  //  550ms → グリッチ開始
+  //  750ms → グリッチ終了
   //  800ms → PASSCODE ACCEPTED. ぽっ
   // 1200ms → フラッシュ開始
   // 5700ms → 画面遷移 (1200 + 4500)
   useEffect(() => {
     if (!turbo) return
     setPhase('success')
+    const t0a = setTimeout(() => setShowGlitch(true), 550)
+    const t0b = setTimeout(() => setShowGlitch(false), 750)
     const t1 = setTimeout(() => setShowAccepted(true), 800)
     const t2 = setTimeout(() => setFlashReady(true), 1200)
     const t3 = setTimeout(() => onTurboDone?.(), 5700)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    return () => { clearTimeout(t0a); clearTimeout(t0b); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [turbo, onTurboDone])
   const inputRef = useRef<HTMLInputElement>(null)
   const { displayed: titleText, done: titleDone } = useTypingEffect('SHIFT-ADMIN TERMINAL v2.0', 40, 300)
@@ -254,7 +364,7 @@ function MatrixAdminLogin({
 
   return (
     <div className="fixed inset-0 z-50">
-      <MatrixRain turbo={turbo} />
+      <MatrixRain turbo={turbo} lastKeypressRef={lastKeypressRef} />
       <style>{`
         @keyframes glitch1 {
           0% { transform: translate(0); }
@@ -330,7 +440,37 @@ function MatrixAdminLogin({
           from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes glitchScreen {
+          0%   { opacity: 0; clip-path: inset(0 0 100% 0); }
+          8%   { opacity: 1; clip-path: inset(20% 0 30% 0); transform: skewX(8deg) translateX(-4px); }
+          16%  { clip-path: inset(50% 0 10% 0); transform: skewX(-6deg) translateX(6px); }
+          24%  { clip-path: inset(5% 0 60% 0);  transform: skewX(4deg) translateX(-2px); }
+          32%  { clip-path: inset(70% 0 5% 0);  transform: skewX(-10deg) translateX(8px); }
+          40%  { clip-path: inset(30% 0 40% 0); transform: skewX(5deg) translateX(-5px); }
+          50%  { clip-path: inset(0 0 0 0);      transform: skewX(0); }
+          60%  { clip-path: inset(40% 0 20% 0); transform: skewX(-4deg) translateX(3px); }
+          70%  { clip-path: inset(10% 0 55% 0); transform: skewX(7deg) translateX(-6px); }
+          80%  { clip-path: inset(60% 0 15% 0); transform: skewX(-3deg) translateX(4px); }
+          90%  { clip-path: inset(0 0 0 0);      transform: skewX(0); opacity: 0.8; }
+          100% { opacity: 0; clip-path: inset(0 0 100% 0); }
+        }
       `}</style>
+
+      {/* ② グリッチフラッシュオーバーレイ */}
+      {showGlitch && (
+        <div
+          className="fixed inset-0 pointer-events-none"
+          style={{
+            zIndex: 25,
+            background: 'repeating-linear-gradient(0deg, rgba(0,255,60,0.15) 0px, rgba(0,255,60,0.15) 2px, transparent 2px, transparent 4px), rgba(0,220,50,0.08)',
+            animation: 'glitchScreen 0.2s steps(1) forwards',
+            mixBlendMode: 'screen',
+          }}
+        />
+      )}
+
+      {/* ⑥ パーティクル爆発（ACCEPTED 出現と同時） */}
+      <ParticleCanvas active={showAccepted} />
 
       {/* PASSCODE ACCEPTED ポップ */}
       {showAccepted && (
@@ -476,7 +616,7 @@ function MatrixAdminLogin({
                       ref={inputRef}
                       type="password"
                       value={adminToken}
-                      onChange={(e) => setAdminToken(e.target.value)}
+                      onChange={(e) => { setAdminToken(e.target.value); lastKeypressRef.current = Date.now() }}
                       disabled={adminLoading}
                       className="flex-1 bg-transparent border-none outline-none text-green-300 text-sm font-mono caret-green-400 placeholder:text-green-800"
                       placeholder="enter_token_here"
