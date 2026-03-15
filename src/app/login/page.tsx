@@ -10,8 +10,18 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { CalendarDays, Loader2 } from 'lucide-react'
 
 /* ── Matrix Rain Canvas ── */
-function MatrixRain() {
+function MatrixRain({ turbo = false }: { turbo?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const turboRef = useRef(false)
+  const turboStartRef = useRef<number | null>(null)
+
+  // turbo prop → ref に同期（draw ループはクロージャで ref を参照するため）
+  useEffect(() => {
+    if (turbo && !turboRef.current) {
+      turboRef.current = true
+      turboStartRef.current = Date.now()
+    }
+  }, [turbo])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -32,9 +42,17 @@ function MatrixRain() {
     const drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100)
 
     const draw = () => {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)'
+      // turbo 進捗（0→1 over 900ms）
+      let t = 0
+      if (turboRef.current && turboStartRef.current) {
+        t = Math.min((Date.now() - turboStartRef.current) / 900, 1)
+      }
+      const speedMult = 1 + t * 14          // 1x → 15x
+      const brightness = t                  // 0=緑 → 1=白
+
+      // trail 残像: turbo 中は薄く（速いので）
+      ctx.fillStyle = `rgba(0,0,0,${Math.max(0.02, 0.05 - brightness * 0.03)})`
       ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.fillStyle = '#0f0'
       ctx.font = `${fontSize}px monospace`
 
       for (let i = 0; i < drops.length; i++) {
@@ -42,20 +60,24 @@ function MatrixRain() {
         const x = i * fontSize
         const y = drops[i] * fontSize
 
-        // Brighter head character
-        if (Math.random() > 0.5) {
+        if (brightness > 0.05) {
+          // 緑 → 白 へ線形補間
+          const r = Math.min(255, Math.floor(brightness * 255))
+          const g = Math.min(255, Math.floor(80 + Math.random() * 175 + brightness * 175))
+          const b = Math.min(255, Math.floor(brightness * 255))
+          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, 0.7 + brightness * 0.3)})`
+          ctx.fillText(char, x, y)
+        } else if (Math.random() > 0.5) {
           ctx.fillStyle = '#fff'
           ctx.fillText(char, x, y)
           ctx.fillStyle = '#0f0'
         } else {
-          ctx.fillStyle = `rgba(0, ${150 + Math.random() * 105}, 0, ${0.5 + Math.random() * 0.5})`
+          ctx.fillStyle = `rgba(0,${150 + Math.random() * 105},0,${0.5 + Math.random() * 0.5})`
           ctx.fillText(char, x, y)
         }
 
-        if (y > canvas.height && Math.random() > 0.975) {
-          drops[i] = 0
-        }
-        drops[i]++
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0
+        drops[i] += speedMult
       }
     }
 
@@ -160,6 +182,8 @@ function MatrixAdminLogin({
   adminLoading,
   onSubmit,
   onBack,
+  turbo = false,
+  onTurboDone,
 }: {
   adminToken: string
   setAdminToken: (v: string) => void
@@ -167,8 +191,18 @@ function MatrixAdminLogin({
   adminLoading: boolean
   onSubmit: () => void
   onBack: () => void
+  turbo?: boolean
+  onTurboDone?: () => void
 }) {
-  const [phase, setPhase] = useState<'boot' | 'input' | 'auth'>('boot')
+  const [phase, setPhase] = useState<'boot' | 'input' | 'auth' | 'success'>('boot')
+
+  // turbo 開始 → success フェーズへ切替 → 1500ms 後に画面遷移
+  useEffect(() => {
+    if (!turbo) return
+    setPhase('success')
+    const timer = setTimeout(() => onTurboDone?.(), 1500)
+    return () => clearTimeout(timer)
+  }, [turbo, onTurboDone])
   const inputRef = useRef<HTMLInputElement>(null)
   const { displayed: titleText, done: titleDone } = useTypingEffect('SHIFT-ADMIN TERMINAL v2.0', 40, 300)
 
@@ -191,7 +225,7 @@ function MatrixAdminLogin({
 
   return (
     <div className="fixed inset-0 z-50">
-      <MatrixRain />
+      <MatrixRain turbo={turbo} />
       <style>{`
         @keyframes glitch1 {
           0% { transform: translate(0); }
@@ -237,7 +271,34 @@ function MatrixAdminLogin({
           background-size: 100% 4px;
           pointer-events: none;
         }
+        @keyframes issaGlow {
+          0%   { transform: scale(0.4); opacity: 0; }
+          40%  { opacity: 1; }
+          100% { transform: scale(6); opacity: 0.9; }
+        }
+        @keyframes issaFlash {
+          0%   { opacity: 0; }
+          45%  { opacity: 0; }
+          75%  { opacity: 0.6; }
+          100% { opacity: 1; }
+        }
       `}</style>
+
+      {/* turbo 発光オーバーレイ */}
+      {turbo && (
+        <>
+          {/* 中央から広がる緑グロー */}
+          <div className="fixed inset-0 z-30 pointer-events-none" style={{
+            background: 'radial-gradient(circle at 50% 50%, rgba(0,255,60,0.75) 0%, rgba(0,200,0,0.25) 40%, transparent 65%)',
+            animation: 'issaGlow 1s ease-out forwards',
+          }} />
+          {/* 全画面ホワイトフラッシュ（ぶわぁぁぁぁ） */}
+          <div className="fixed inset-0 z-40 pointer-events-none" style={{
+            background: 'linear-gradient(135deg, #00ff44 0%, #ffffff 60%)',
+            animation: 'issaFlash 1.5s ease-in forwards',
+          }} />
+        </>
+      )}
 
       {/* Scanline overlay */}
       <div className="fixed inset-0 z-10 pointer-events-none scanline" />
@@ -367,6 +428,21 @@ function MatrixAdminLogin({
                 </div>
               </div>
             )}
+
+            {/* Success phase - ぶわぁぁぁぁ直前 */}
+            {phase === 'success' && (
+              <div className="space-y-1.5 mt-4 font-mono text-xs">
+                <p className="text-green-400">[OK] Token verified: <span className="text-white">████████████</span></p>
+                <p className="text-green-400">[OK] Identity confirmed: <span className="text-white font-bold">ISSA</span></p>
+                <p className="text-green-300">[OK] CLEARANCE LEVEL: <span className="text-yellow-300 font-bold">OMEGA</span></p>
+                <p className="text-green-400 mt-3">{'>'} Initializing admin session...</p>
+                <p className="text-green-400">{'>'} Loading all systems...</p>
+                <div className="flex items-center gap-2 text-green-300 mt-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span className="terminal-cursor font-bold tracking-widest">ACCESS GRANTED</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -389,6 +465,7 @@ export default function LoginPage() {
   const [adminToken, setAdminToken] = useState('')
   const [adminError, setAdminError] = useState('')
   const [adminLoading, setAdminLoading] = useState(false)
+  const [turboMode, setTurboMode] = useState(false)
 
   const handleLogoTap = () => {
     tapCountRef.current += 1
@@ -417,9 +494,14 @@ export default function LoginPage() {
       setAdminError('Invalid token. Access denied.')
       return
     }
+    // このログイン画面はいっさ専用
+    if (data.name !== 'いっさ') {
+      setAdminError('ACCESS RESTRICTED. Authorization level insufficient.')
+      return
+    }
     storeStaff(data)
-    setShowAdminLogin(false)
-    router.replace('/home')
+    // ナビゲーションは turbo 演出が終わったあと onTurboDone で行う
+    setTurboMode(true)
   }
 
   useEffect(() => {
@@ -476,7 +558,10 @@ export default function LoginPage() {
             setShowAdminLogin(false)
             setAdminToken('')
             setAdminError('')
+            setTurboMode(false)
           }}
+          turbo={turboMode}
+          onTurboDone={() => router.replace('/home')}
         />
       )}
 
