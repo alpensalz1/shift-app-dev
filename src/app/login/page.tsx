@@ -128,13 +128,19 @@ function MatrixRain({ turbo = false, lastKeypressRef }: {
 }
 
 /* ── Particle Explosion Canvas ── */
-function ParticleCanvas({ active }: { active: boolean }) {
+// shockwaveActive: 衝撃波リングだけ先に発動（ポップアップより前）
+// burstActive:     文字パーティクル爆発（ポップアップと同時）
+function ParticleCanvas({ shockwaveActive, burstActive }: {
+  shockwaveActive: boolean
+  burstActive: boolean
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const startedRef = useRef(false)
+  const shockStartedRef = useRef(false)
+  const burstStartedRef = useRef(false)
 
+  // shockwave と burst は独立したタイミングで起動 → 同一 canvas に描く
   useEffect(() => {
-    if (!active || startedRef.current) return
-    startedRef.current = true
+    if ((!shockwaveActive && !burstActive)) return
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -143,43 +149,40 @@ function ParticleCanvas({ active }: { active: boolean }) {
     canvas.width = window.innerWidth
     canvas.height = window.innerHeight
 
-    // Half-width katakana + ASCII — pure Matrix alphabet
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789@#$%<>{}[]'
     const cx = canvas.width / 2
     const cy = canvas.height / 2
 
-    // Color: white-hot → yellow-green → Matrix green, all fade to transparent
-    const matrixColor = (progress: number, alpha: number): string => {
+    // 色: 白熱 → 黄緑 → Matrix緑
+    const matrixColor = (progress: number): string => {
       if (progress < 0.12) {
-        // 白熱 → 黄緑
         const t = progress / 0.12
-        return `rgba(${Math.round(255 - t * 100)},255,${Math.round(255 * (1 - t))},${alpha})`
+        return `rgb(${Math.round(255 - t * 100)},255,${Math.round(255 * (1 - t))})`
       } else if (progress < 0.35) {
-        // 黄緑 → Matrix緑
         const t = (progress - 0.12) / 0.23
-        return `rgba(${Math.round(155 * (1 - t))},255,0,${alpha})`
-      } else {
-        // Matrix緑 (pure)
-        return `rgba(0,255,65,${alpha})`
+        return `rgb(${Math.round(155 * (1 - t))},255,0)`
       }
+      return 'rgb(0,255,65)'
     }
 
-    // Shockwave rings: 2 rings expand from center
-    const maxR = Math.hypot(canvas.width, canvas.height) * 0.7
-    const rings = [
-      { r: 0, speed: 22, maxR, lineW: 2.5, bright: 1.0 },
-      { r: 0, speed: 14, maxR: maxR * 0.6, lineW: 1.2, bright: 0.55 },
-    ]
+    // ── Shockwave rings（ゆっくり大きく広がる） ──
+    // speed=8px/frame@60fps → 半径800pxに達するまで ~1.7秒 → ちゃんと見える
+    const maxR = Math.hypot(canvas.width, canvas.height) * 0.75
+    const rings = shockwaveActive ? [
+      { r: 4, speed: 8,   maxR,          lineW: 3,   bright: 1.0  },  // 主リング
+      { r: 4, speed: 4.5, maxR: maxR*0.6, lineW: 1.5, bright: 0.5  },  // 遅い内側リング
+      { r: 4, speed: 14,  maxR: maxR*0.4, lineW: 1,   bright: 0.35 },  // 速い小リング（瞬時消え）
+    ] : []
 
-    // Particle interface
+    // ── Particles ──
     interface Particle {
       x: number; y: number
       vx: number; vy: number
       char: string
-      charTick: number        // frames until next char change
+      charTick: number
       size: number
       maxLife: number
-      spawnAt: number         // elapsed seconds when this particle activates
+      spawnAt: number
       rotation: number
       rotSpeed: number
       trail: { x: number; y: number }[]
@@ -194,22 +197,25 @@ function ParticleCanvas({ active }: { active: boolean }) {
           vx: Math.cos(angle) * spd,
           vy: Math.sin(angle) * spd,
           char: chars[Math.floor(Math.random() * chars.length)],
-          charTick: Math.floor(3 + Math.random() * 7),
+          charTick: Math.floor(10 + Math.random() * 12), // 10-22フレームごと変化（読める速さ）
           size: szMin + Math.random() * (szMax - szMin),
-          maxLife: 1.1 + Math.random() * 0.9,
+          maxLife: 1.3 + Math.random() * 0.9,
           spawnAt,
           rotation: Math.random() * Math.PI * 2,
-          rotSpeed: (Math.random() - 0.5) * 0.18,
+          rotSpeed: (Math.random() - 0.5) * 0.14,
           trail: [],
         }
       })
 
-    // 3波：Wave1 大粒・高速、Wave2 中粒・中速、Wave3 小粒・遅め
-    const allParticles: Particle[] = [
-      ...makeWave(50, 0,    6, 15, 13, 22),
-      ...makeWave(45, 0.14, 4, 11, 10, 17),
-      ...makeWave(35, 0.29, 2,  7,  8, 13),
-    ]
+    // 3波: 間隔200msずつ → 爆発が重なって見える
+    const allParticles: Particle[] = burstActive ? [
+      ...makeWave(50, 0,    6, 14, 13, 22),  // Wave1: 大粒・高速
+      ...makeWave(45, 0.20, 3, 10, 10, 17),  // Wave2: 中粒・中速
+      ...makeWave(35, 0.40, 2,  6,  8, 13),  // Wave3: 小粒・遅め
+    ] : []
+
+    if (!shockwaveActive) shockStartedRef.current = true
+    if (!burstActive) burstStartedRef.current = true
 
     const start = performance.now()
     let rafId: number
@@ -224,13 +230,14 @@ function ParticleCanvas({ active }: { active: boolean }) {
         ring.r += ring.speed
         if (ring.r < ring.maxR) {
           ringsAlive = true
-          const alpha = ring.bright * (1 - ring.r / ring.maxR)
+          // アルファ: 最初は強く、外側に行くほど薄く
+          const alpha = ring.bright * Math.pow(1 - ring.r / ring.maxR, 0.7)
           ctx.beginPath()
           ctx.arc(cx, cy, ring.r, 0, Math.PI * 2)
           ctx.strokeStyle = `rgba(0,255,65,${alpha})`
           ctx.lineWidth = ring.lineW
           ctx.shadowColor = '#00ff41'
-          ctx.shadowBlur = 18
+          ctx.shadowBlur = 20
           ctx.stroke()
           ctx.shadowBlur = 0
         }
@@ -245,54 +252,53 @@ function ParticleCanvas({ active }: { active: boolean }) {
         particlesAlive = true
 
         const progress = age / p.maxLife
-        // fade-in 0→0.08, hold, fade-out 0.25→1.0
-        const alpha = progress < 0.08
-          ? progress / 0.08
-          : Math.pow(1 - progress, 1.6)
+        // fade-in 0→0.06、なだらかに fade-out
+        const alpha = progress < 0.06
+          ? progress / 0.06
+          : Math.pow(1 - progress, 1.4)
 
-        // Physics
         p.x += p.vx
         p.y += p.vy
-        p.vy += 0.10   // gravity
-        p.vx *= 0.990  // air resistance
+        p.vy += 0.09    // 重力（軽め→長く飛ぶ）
+        p.vx *= 0.992   // 空気抵抗
         p.rotation += p.rotSpeed
 
-        // Trail: keep last 10 positions
+        // Trail（直近12フレーム）
         p.trail.push({ x: p.x, y: p.y })
-        if (p.trail.length > 10) p.trail.shift()
+        if (p.trail.length > 12) p.trail.shift()
 
-        // Char morph every charTick frames
+        // 文字モーフ（10-22フレームごと = 160-370ms）
         p.charTick--
         if (p.charTick <= 0) {
           p.char = chars[Math.floor(Math.random() * chars.length)]
-          p.charTick = Math.floor(3 + Math.random() * 7)
+          p.charTick = Math.floor(10 + Math.random() * 12)
         }
 
-        // ── Draw trail ──
+        const color = matrixColor(progress)
+
+        // ── Trail ──
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         for (let t = 0; t < p.trail.length - 1; t++) {
-          const tf = t / p.trail.length   // 0=oldest 1=newest
-          const trailAlpha = alpha * tf * tf * 0.45  // quadratic fade
-          const trailSize = p.size * (0.35 + tf * 0.55)
+          const tf = t / p.trail.length
           ctx.save()
-          ctx.globalAlpha = trailAlpha
-          ctx.fillStyle = matrixColor(progress, 1)
+          ctx.globalAlpha = alpha * tf * tf * 0.5
+          ctx.fillStyle = color
           ctx.shadowColor = '#00ff41'
-          ctx.shadowBlur = 6
-          ctx.font = `bold ${trailSize}px monospace`
+          ctx.shadowBlur = 5
+          ctx.font = `bold ${p.size * (0.3 + tf * 0.6)}px monospace`
           ctx.fillText(p.char, p.trail[t].x, p.trail[t].y)
           ctx.restore()
         }
 
-        // ── Draw main char ──
+        // ── Main char ──
         ctx.save()
         ctx.translate(p.x, p.y)
         ctx.rotate(p.rotation)
         ctx.globalAlpha = alpha
-        ctx.fillStyle = matrixColor(progress, 1)
-        ctx.shadowColor = progress < 0.25 ? '#afffdf' : '#00ff41'
-        ctx.shadowBlur = 20 + (1 - progress) * 25
+        ctx.fillStyle = color
+        ctx.shadowColor = progress < 0.2 ? '#ccffcc' : '#00ff41'
+        ctx.shadowBlur = 18 + (1 - progress) * 22
         ctx.font = `bold ${p.size}px monospace`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -307,13 +313,15 @@ function ParticleCanvas({ active }: { active: boolean }) {
 
     rafId = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(rafId)
-  }, [active])
+  // shockwaveActiveまたはburstActiveが変わるたびに再起動
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shockwaveActive, burstActive])
 
   return (
     <canvas
       ref={canvasRef}
       className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 36 }}
+      style={{ zIndex: 34 }}  // ポップアップ(35)より下 → 文字に被らない
     />
   )
 }
@@ -416,27 +424,30 @@ function MatrixAdminLogin({
   onTurboDone?: () => void
 }) {
   const [phase, setPhase] = useState<'boot' | 'input' | 'auth' | 'success'>('boot')
-  const [showAccepted, setShowAccepted] = useState(false)  // PASSCODE ACCEPTED. ポップ
+  const [showAccepted, setShowAccepted] = useState(false)  // PASSCODE ACCEPTED ポップ
   const [flashReady, setFlashReady] = useState(false)       // フラッシュ開始フラグ
   const [showGlitch, setShowGlitch] = useState(false)       // グリッチフラッシュ
+  const [showShockwave, setShowShockwave] = useState(false) // 衝撃波リング（先行）
   const lastKeypressRef = useRef<number>(0)                 // タイピングフィードバック
 
   // turbo 開始のタイムライン:
-  //  0ms   → 雨加速
-  //  550ms → グリッチ開始
-  //  750ms → グリッチ終了
-  //  800ms → PASSCODE ACCEPTED. ぽっ
-  // 1200ms → フラッシュ開始
-  // 5700ms → 画面遷移 (1200 + 4500)
+  //    0ms → 雨加速
+  //  300ms → 衝撃波リング発射（ポップアップより前）
+  //  650ms → グリッチ開始
+  //  820ms → グリッチ終了
+  //  950ms → PASSCODE ACCEPTED ぽっ + パーティクル爆発
+  // 1600ms → フラッシュ開始（パーティクルを十分見せてから）
+  // 6300ms → 画面遷移 (1600 + 4700ms のゆっくりフラッシュ)
   useEffect(() => {
     if (!turbo) return
     setPhase('success')
-    const t0a = setTimeout(() => setShowGlitch(true), 550)
-    const t0b = setTimeout(() => setShowGlitch(false), 750)
-    const t1 = setTimeout(() => setShowAccepted(true), 800)
-    const t2 = setTimeout(() => setFlashReady(true), 1200)
-    const t3 = setTimeout(() => onTurboDone?.(), 5700)
-    return () => { clearTimeout(t0a); clearTimeout(t0b); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    const t0  = setTimeout(() => setShowShockwave(true),  300)
+    const t1a = setTimeout(() => setShowGlitch(true),     650)
+    const t1b = setTimeout(() => setShowGlitch(false),    820)
+    const t2  = setTimeout(() => setShowAccepted(true),   950)
+    const t3  = setTimeout(() => setFlashReady(true),    1600)
+    const t4  = setTimeout(() => onTurboDone?.(),        6300)
+    return () => { clearTimeout(t0); clearTimeout(t1a); clearTimeout(t1b); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
   }, [turbo, onTurboDone])
   const inputRef = useRef<HTMLInputElement>(null)
   const { displayed: titleText, done: titleDone } = useTypingEffect('SHIFT-ADMIN TERMINAL v2.0', 40, 300)
@@ -537,18 +548,17 @@ function MatrixAdminLogin({
           to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes glitchScreen {
-          0%   { opacity: 0; clip-path: inset(0 0 100% 0); }
-          8%   { opacity: 1; clip-path: inset(20% 0 30% 0); transform: skewX(8deg) translateX(-4px); }
-          16%  { clip-path: inset(50% 0 10% 0); transform: skewX(-6deg) translateX(6px); }
-          24%  { clip-path: inset(5% 0 60% 0);  transform: skewX(4deg) translateX(-2px); }
-          32%  { clip-path: inset(70% 0 5% 0);  transform: skewX(-10deg) translateX(8px); }
-          40%  { clip-path: inset(30% 0 40% 0); transform: skewX(5deg) translateX(-5px); }
-          50%  { clip-path: inset(0 0 0 0);      transform: skewX(0); }
-          60%  { clip-path: inset(40% 0 20% 0); transform: skewX(-4deg) translateX(3px); }
-          70%  { clip-path: inset(10% 0 55% 0); transform: skewX(7deg) translateX(-6px); }
-          80%  { clip-path: inset(60% 0 15% 0); transform: skewX(-3deg) translateX(4px); }
-          90%  { clip-path: inset(0 0 0 0);      transform: skewX(0); opacity: 0.8; }
-          100% { opacity: 0; clip-path: inset(0 0 100% 0); }
+          0%   { opacity: 0;   clip-path: inset(30% 0 40% 0); transform: skewX(0deg); }
+          10%  { opacity: 0.9; clip-path: inset(20% 0 30% 0); transform: skewX(7deg) translateX(-5px); }
+          20%  { opacity: 1;   clip-path: inset(55% 0 10% 0); transform: skewX(-5deg) translateX(7px); }
+          30%  { opacity: 0.8; clip-path: inset(5%  0 60% 0); transform: skewX(4deg) translateX(-3px); }
+          40%  { opacity: 1;   clip-path: inset(70% 0 5%  0); transform: skewX(-9deg) translateX(9px); }
+          50%  { opacity: 0.7; clip-path: inset(15% 0 45% 0); transform: skewX(6deg) translateX(-6px); }
+          60%  { opacity: 1;   clip-path: inset(40% 0 25% 0); transform: skewX(-3deg) translateX(4px); }
+          70%  { opacity: 0.9; clip-path: inset(10% 0 55% 0); transform: skewX(8deg) translateX(-7px); }
+          80%  { opacity: 1;   clip-path: inset(60% 0 15% 0); transform: skewX(-4deg) translateX(5px); }
+          90%  { opacity: 0.6; clip-path: inset(25% 0 35% 0); transform: skewX(3deg) translateX(-2px); }
+          100% { opacity: 0;   clip-path: inset(50% 0 50% 0); transform: skewX(0deg); }
         }
       `}</style>
 
@@ -558,15 +568,15 @@ function MatrixAdminLogin({
           className="fixed inset-0 pointer-events-none"
           style={{
             zIndex: 25,
-            background: 'repeating-linear-gradient(0deg, rgba(0,255,60,0.15) 0px, rgba(0,255,60,0.15) 2px, transparent 2px, transparent 4px), rgba(0,220,50,0.08)',
-            animation: 'glitchScreen 0.2s steps(1) forwards',
+            background: 'repeating-linear-gradient(0deg, rgba(0,255,60,0.18) 0px, rgba(0,255,60,0.18) 2px, transparent 2px, transparent 4px)',
+            animation: 'glitchScreen 0.17s linear forwards',
             mixBlendMode: 'screen',
           }}
         />
       )}
 
-      {/* ⑥ パーティクル爆発（ACCEPTED 出現と同時） */}
-      <ParticleCanvas active={showAccepted} />
+      {/* ショックウェーブ（先行）＋ パーティクル爆発（ポップアップと同時） */}
+      <ParticleCanvas shockwaveActive={showShockwave} burstActive={showAccepted} />
 
       {/* PASSCODE ACCEPTED ポップ */}
       {showAccepted && (
