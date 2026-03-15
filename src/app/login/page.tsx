@@ -195,13 +195,21 @@ function MatrixAdminLogin({
   onTurboDone?: () => void
 }) {
   const [phase, setPhase] = useState<'boot' | 'input' | 'auth' | 'success'>('boot')
+  const [showAccepted, setShowAccepted] = useState(false)  // PASSCODE ACCEPTED. ポップ
+  const [flashReady, setFlashReady] = useState(false)       // フラッシュ開始フラグ
 
-  // turbo 開始 → success フェーズへ切替 → 4500ms 後に画面遷移
+  // turbo 開始のタイムライン:
+  //  0ms   → 雨加速
+  //  800ms → PASSCODE ACCEPTED. ぽっ
+  // 1200ms → フラッシュ開始
+  // 5700ms → 画面遷移 (1200 + 4500)
   useEffect(() => {
     if (!turbo) return
     setPhase('success')
-    const timer = setTimeout(() => onTurboDone?.(), 4500)
-    return () => clearTimeout(timer)
+    const t1 = setTimeout(() => setShowAccepted(true), 800)
+    const t2 = setTimeout(() => setFlashReady(true), 1200)
+    const t3 = setTimeout(() => onTurboDone?.(), 5700)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [turbo, onTurboDone])
   const inputRef = useRef<HTMLInputElement>(null)
   const { displayed: titleText, done: titleDone } = useTypingEffect('SHIFT-ADMIN TERMINAL v2.0', 40, 300)
@@ -283,10 +291,37 @@ function MatrixAdminLogin({
           80%  { opacity: 0.55; }
           100% { opacity: 1; }
         }
+        @keyframes acceptedPop {
+          0%   { transform: scale(0.4); opacity: 0; }
+          65%  { transform: scale(1.08); opacity: 1; }
+          100% { transform: scale(1);   opacity: 1; }
+        }
       `}</style>
 
-      {/* turbo 発光オーバーレイ */}
-      {turbo && (
+      {/* PASSCODE ACCEPTED. ポップ */}
+      {showAccepted && (
+        <div className="fixed inset-0 z-35 flex items-center justify-center pointer-events-none">
+          <div style={{
+            animation: 'acceptedPop 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards',
+            background: 'rgba(0,0,0,0.75)',
+            border: '1px solid rgba(0,255,70,0.7)',
+            borderRadius: '10px',
+            padding: '28px 52px',
+            textAlign: 'center',
+            boxShadow: '0 0 40px rgba(0,255,60,0.4), inset 0 0 20px rgba(0,255,60,0.05)',
+          }}>
+            <p style={{ color: '#00ff44', fontFamily: 'monospace', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '10px', opacity: 0.8 }}>
+              ✓ AUTHENTICATION COMPLETE
+            </p>
+            <p style={{ color: '#ffffff', fontFamily: 'monospace', fontSize: '26px', fontWeight: 'bold', letterSpacing: '0.08em' }}>
+              PASSCODE ACCEPTED.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* turbo 発光オーバーレイ（フラッシュ準備完了後に表示） */}
+      {flashReady && (
         <>
           {/* 中央から広がる緑グロー */}
           <div className="fixed inset-0 z-30 pointer-events-none" style={{
