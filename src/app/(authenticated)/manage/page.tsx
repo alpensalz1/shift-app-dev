@@ -311,7 +311,7 @@ function ShiftConfirmTab() {
   const handleRestore = async (req: RequestWithStaff) => {
     // 定休日に設定されている日の申請は復元不可（「定休日解除」で一括復元する）
     if (closedDates.includes(req.date.substring(0, 10))) {
-      setMessage('定休日が設定されているため申請中に戻せません。先に定休日を解除してください。')
+      setMessage('休業日が設定されているため申請中に戻せません。先に休業日を解除してください。')
       return
     }
     setConfirming(true)
@@ -366,15 +366,15 @@ function ShiftConfirmTab() {
     const alreadyClosed = closedDates.includes(dateStr)
     try {
       if (alreadyClosed) {
-        // 定休日解除: closed_datesから削除 + shift_requestsをpendingに戻す
+        // 休業日解除: closed_datesから削除 + shift_requestsをpendingに戻す
         const { error: delErr } = await supabase.from('closed_dates').delete().eq('date', dateStr)
-        if (delErr) throw new Error('定休日解除に失敗: ' + delErr.message)
+        if (delErr) throw new Error('休業日解除に失敗: ' + delErr.message)
         const { error: updErr } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('date', dateStr).eq('status', 'rejected')
         if (updErr) throw new Error('申請ステータス復元に失敗: ' + updErr.message)
       } else {
-        // 定休日設定: closed_datesに追加 + pending申請のみrejectedに変更（既にrejectedのものは触らない）
+        // 休業日設定: closed_datesに追加 + pending申請のみrejectedに変更（既にrejectedのものは触らない）
         const { error: insErr } = await supabase.from('closed_dates').insert({ date: dateStr })
-        if (insErr) throw new Error('定休日設定に失敗: ' + insErr.message)
+        if (insErr) throw new Error('休業日設定に失敗: ' + insErr.message)
         const { error: updErr } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('date', dateStr).eq('status', 'pending')
         if (updErr) throw new Error('申請却下に失敗: ' + updErr.message)
       }
@@ -479,7 +479,7 @@ function ShiftConfirmTab() {
                 disabled={confirming}
                 className={`text-xs px-2 py-0.5 rounded-full border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${closedDates.includes(selectedDate!) ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-rose-300 hover:text-rose-500'}`}
               >
-                {closedDates.includes(selectedDate!) ? '定休日解除' : '定休日に設定'}
+                {closedDates.includes(selectedDate!) ? '休業日解除' : '休業日に設定'}
               </button>
             </CardTitle>
           </CardHeader>
