@@ -300,7 +300,7 @@ function MatrixAdminLogin({
 
       {/* PASSCODE ACCEPTED. ポップ */}
       {showAccepted && (
-        <div className="fixed inset-0 z-35 flex items-center justify-center pointer-events-none">
+        <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 35 }}>
           <div style={{
             animation: 'acceptedPop 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards',
             background: 'rgba(0,0,0,0.75)',
