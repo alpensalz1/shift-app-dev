@@ -131,7 +131,7 @@ function ShiftConfirmTab() {
     if (staffRes.error) console.error('staffs取得失敗:', staffRes.error.message)
     else if (staffRes.data) setAllStaffs(staffRes.data)
     if (closedRes.error) console.error('closed_dates取得失敗:', closedRes.error.message)
-    else if (closedRes.data) setClosedDates(closedRes.data.map((c: {date: string}) => c.date))
+    else if (closedRes.data) setClosedDates(closedRes.data.map((c: {date: string}) => c.date.substring(0, 10)))
     if (offRes.error) console.error('off_requests取得失敗:', offRes.error.message)
     else if (offRes.data) setOffRequests(offRes.data as OffRequest[])
     setLoading(false)
@@ -173,13 +173,13 @@ function ShiftConfirmTab() {
 
   const dateMap = useMemo(() => {
     const map: Record<string, RequestWithStaff[]> = {}
-    requests.forEach((r) => { if (!map[r.date]) map[r.date] = []; map[r.date].push(r) })
+    requests.forEach((r) => { const dk = r.date.substring(0, 10); if (!map[dk]) map[dk] = []; map[dk].push(r) })
     return map
   }, [requests])
 
   const fixedMap = useMemo(() => {
     const map: Record<string, ShiftFixed[]> = {}
-    fixedShifts.forEach((f) => { if (!map[f.date]) map[f.date] = []; map[f.date].push(f) })
+    fixedShifts.forEach((f) => { const dk = f.date.substring(0, 10); if (!map[dk]) map[dk] = []; map[dk].push(f) })
     return map
   }, [fixedShifts])
 
@@ -205,13 +205,13 @@ function ShiftConfirmTab() {
     // スタッフ×日付ごとの確定済みシフト種別セット（仕込み・営業申請の部分確定検出に使用）
     const fixedTypesByKey: Record<string, Set<string>> = {}
     fixedShifts.forEach(f => {
-      const key = f.staff_id + '_' + f.date
+      const key = f.staff_id + '_' + f.date.substring(0, 10)
       if (!fixedTypesByKey[key]) fixedTypesByKey[key] = new Set()
       fixedTypesByKey[key].add(f.type)
     })
     // 仕込み・営業申請は両方確定されて初めて「完全確定済み」とみなす
     const isFullyConfirmed = (r: RequestWithStaff) => {
-      const types = fixedTypesByKey[r.staff_id + '_' + r.date] ?? new Set<string>()
+      const types = fixedTypesByKey[r.staff_id + '_' + r.date.substring(0, 10)] ?? new Set<string>()
       if (r.type === '仕込み・営業') return types.has('仕込み') && types.has('営業')
       return types.has(r.type)
     }
@@ -301,7 +301,7 @@ function ShiftConfirmTab() {
   // 却下された申請を申請中（pending）に戻す
   const handleRestore = async (req: RequestWithStaff) => {
     // 定休日に設定されている日の申請は復元不可（「定休日解除」で一括復元する）
-    if (closedDates.includes(req.date)) {
+    if (closedDates.includes(req.date.substring(0, 10))) {
       setMessage('定休日が設定されているため申請中に戻せません。先に定休日を解除してください。')
       return
     }
