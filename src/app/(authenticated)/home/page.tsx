@@ -214,7 +214,7 @@ export default function HomePage() {
 
   const dayShifts = useMemo(() => {
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
-    return shifts.filter(s => s.date === dateStr)
+    return shifts.filter(s => s.date.substring(0, 10) === dateStr)
   }, [shifts, selectedDate])
 
   const shiftsByShop = useMemo(() => {
@@ -281,7 +281,7 @@ export default function HomePage() {
         {weekDays.map((day, i) => {
           const isSelected = isSameDay(day, selectedDate)
           const isDayToday = isSameDay(day, today)
-          const dayHasShifts = shifts.some(s => s.date === format(day, 'yyyy-MM-dd'))
+          const dayHasShifts = shifts.some(s => s.date.substring(0, 10) === format(day, 'yyyy-MM-dd'))
           const isSunday = i === 0
           const isSaturday = i === 6
           return (
