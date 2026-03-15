@@ -86,7 +86,7 @@ export default function SalaryPage() {
 
     shifts.forEach((s) => {
       // 過去の時給変更を考慮して該当日の時給を使用
-      const wageAtDate = getWageForDate(wageHistories, staff.id, s.date) ?? staff.wage
+      const wageAtDate = getWageForDate(wageHistories, staff.id, s.date.substring(0, 10)) ?? staff.wage
       totalWage += calcWage(s.start_time, s.end_time, wageAtDate)
       totalHours += calcHours(s.start_time, s.end_time)
     })
@@ -94,7 +94,7 @@ export default function SalaryPage() {
     return {
       totalWage,
       totalHours: Math.round(totalHours * 10) / 10,
-      shiftCount: new Set(shifts.map(s => s.date)).size,
+      shiftCount: new Set(shifts.map(s => s.date.substring(0, 10))).size,
     }
   }, [shifts, staff?.id, staff?.wage, wageHistories])
 

@@ -190,7 +190,7 @@ function LaborCostTab({ month }: { month: string }) {
     const ss = shifts.filter(sh => sh.staff_id === s.id)
     let tw = 0, th = 0
     ss.forEach(sh => {
-      const w = getWageForDate(wageHistories, s.id, sh.date) ?? s.wage
+      const w = getWageForDate(wageHistories, s.id, sh.date.substring(0, 10)) ?? s.wage
       tw += calcWage(sh.start_time, sh.end_time, w)
       th += calcHours(sh.start_time, sh.end_time)
     })
@@ -306,11 +306,17 @@ function StaffManagementTab() {
   }
 
   const handleSoftDelete = async (s: Staff) => {
+    if (saving) return
     if (s.name === 'いっさ') return
     if (!confirm(`${s.name}を削除しますか？\n過去の給与データは保持されます。`)) return
-    const { error } = await supabase.from('staffs').update({ deleted_at: new Date().toISOString(), is_active: false }).eq('id', s.id)
-    if (error) { alert('削除に失敗しました: ' + error.message); return }
-    fetchData()
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('staffs').update({ deleted_at: new Date().toISOString(), is_active: false }).eq('id', s.id)
+      if (error) { alert('削除に失敗しました: ' + error.message); return }
+      fetchData()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleWageChange = async () => {
@@ -343,9 +349,15 @@ function StaffManagementTab() {
   }
 
   const handleToggleType = async (s: Staff, t: string) => {
-    const { error } = await supabase.from('staffs').update({ employment_type: t }).eq('id', s.id)
-    if (error) { alert('雇用形態の変更に失敗しました: ' + error.message); return }
-    fetchData()
+    if (saving) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('staffs').update({ employment_type: t }).eq('id', s.id)
+      if (error) { alert('雇用形態の変更に失敗しました: ' + error.message); return }
+      fetchData()
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return (
@@ -632,8 +644,6 @@ function ClosedDatesTab() {
   const [newNote, setNewNote] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  // handleDel は saving ガードがないため複数の fetch_ が並走する可能性がある
-  // fetchVersionRef で古い fetch 結果が新しい fetch 結果を上書きしないよう管理する
   const fetchVersionRef = useRef(0)
 
   const fetch_ = useCallback(async () => {
@@ -663,9 +673,15 @@ function ClosedDatesTab() {
   }
 
   const handleDel = async (id: number) => {
-    const { error } = await supabase.from('closed_dates').delete().eq('id', id)
-    if (error) { alert('休業日削除に失敗しました: ' + error.message); return }
-    fetch_()
+    if (saving) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('closed_dates').delete().eq('id', id)
+      if (error) { alert('休業日削除に失敗しました: ' + error.message); return }
+      fetch_()
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return (
