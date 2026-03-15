@@ -63,7 +63,7 @@ const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
 
 // アルバイトのシフト時間を店舗の設定に基づき自動分割する
 // shift_config の 仕込み.default_end_time が仕込み/営業の境界時刻
-// minShikomiStart: アルバイト/長期は '14:00' を渡す（仕込みスタートの下限）
+// minShikomiStart: アルバイトは '14:00' を渡す（仕込みスタートの下限）
 function autoSplitShift(
   startTime: string,
   endTime: string,
@@ -77,7 +77,7 @@ function autoSplitShift(
   const start5 = startTime.substring(0, 5)
   const end5 = endTime.substring(0, 5)
   if (start5 >= split5) return [{ type: '営業', start_time: startTime, end_time: endTime }]
-  // アルバイト/長期は仕込みスタートを14:00未満にしない（社員は11:00スタートだがアルバイトは14:00固定）
+  // アルバイトは仕込みスタートを14:00未満にしない（社員は11:00スタートだがアルバイトは14:00固定）
   // ※ この cap は全ブランチに適用: 仕込みのみシフト・分割シフト両方で有効
   const shikomiStart = (minShikomiStart && start5 < minShikomiStart) ? minShikomiStart : startTime
   if (end5 <= split5) return [{ type: '仕込み', start_time: shikomiStart, end_time: endTime }]
@@ -254,9 +254,9 @@ function ShiftConfirmTab() {
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
     setConfirming(true)
     setMessage('')
-    // アルバイト/長期/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
+    // アルバイト/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
     // shifts/page.tsx の isPartTimer 定義と一致させる
-    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期' || req.staffs.employment_type === 'システム管理者'
+    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
     // 店舗config境界で申請時間を分割し、対象typeの時間帯のみ確定（shift_requestsは変更しない）
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
     const split = splits.find(s => s.type === type)
@@ -316,9 +316,9 @@ function ShiftConfirmTab() {
   const handleAutoConfirm = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
     setMessage('')
-    // アルバイト/長期/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
+    // アルバイト/システム管理者は仕込みスタート14:00固定（社員は11:00スタートのためemployment_typeで判定）
     // shifts/page.tsx の isPartTimer 定義と一致させる
-    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === '長期' || req.staffs.employment_type === 'システム管理者'
+    const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
     // この日のスタッフの既存確定をすべて削除してからinsert
     const { error: delErr } = await supabase.from('shifts_fixed')
@@ -431,7 +431,7 @@ function ShiftConfirmTab() {
                   <span className="font-medium">{format(date, 'd')}</span>
                       {isClosed && !isSel && <span className="text-[8px] text-rose-500 font-bold leading-none">休</span>}
                   {!isSel && (() => {
-                    const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト' || r.staffs.employment_type === '長期').map(r => r.staff_id)).size
+                    const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size
                     const socialEmployees = allStaffs.filter(s => s.employment_type === '社員')
                     const offOnDate = offByDate[dateStr] || {}
                     const eC = socialEmployees.filter(s => offOnDate[s.id] !== '休み').length

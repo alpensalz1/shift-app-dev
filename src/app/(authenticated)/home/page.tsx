@@ -162,7 +162,7 @@ export default function HomePage() {
     const staff = getStoredStaff()
     if (staff) {
       setCurrentStaffId(staff.id)
-      const partTimer = staff.employment_type === 'アルバイト' || staff.employment_type === '長期' || staff.employment_type === 'システム管理者'
+      const partTimer = staff.employment_type === 'アルバイト' || staff.employment_type === 'システム管理者'
       setIsPartTimer(partTimer)
     }
   }, [])
@@ -171,7 +171,7 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false
     const staff = getStoredStaff()
-    if (!staff || (staff.employment_type !== 'アルバイト' && staff.employment_type !== '長期' && staff.employment_type !== 'システム管理者')) return
+    if (!staff || (staff.employment_type !== 'アルバイト' && staff.employment_type !== 'システム管理者')) return
     const todayStr = format(new Date(), 'yyyy-MM-dd')
     supabase
       .from('shift_requests')
