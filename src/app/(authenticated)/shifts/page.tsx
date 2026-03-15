@@ -52,33 +52,11 @@ function fmtKey(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
 
-// 時刻選択肢を生成（15分刻み）
-function generateTimeOptions(
-  fromH: number,
-  fromM: number,
-  toH: number,
-  toM: number
-): string[] {
-  const options: string[] = []
-  let h = fromH
-  let m = fromM
-  while (h < toH || (h === toH && m <= toM)) {
-    options.push(
-      `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
-    )
-    m += 15
-    if (m >= 60) {
-      m -= 60
-      h++
-    }
-  }
-  return options
-}
-
-// 開始時刻: 14:00 〜 23:45
-const START_TIME_OPTIONS = generateTimeOptions(14, 0, 23, 45)
-// 終了時刻: 14:15 〜 24:00
-const END_TIME_OPTIONS = generateTimeOptions(14, 15, 24, 0)
+// 時刻ピッカー用: HH / MM 独立選択（縦長 select を排除）
+// 開始: 14〜23時, 終了: 14〜24時
+const START_HOURS = Array.from({ length: 10 }, (_, i) => String(i + 14).padStart(2, '0')) // "14"〜"23"
+const END_HOURS   = Array.from({ length: 11 }, (_, i) => String(i + 14).padStart(2, '0')) // "14"〜"24"
+const TIME_MINUTES = ['00', '15', '30', '45']
 
 const CHOICE_CYCLE: (DayChoice | undefined)[] = [
   undefined,
@@ -452,31 +430,55 @@ function PartTimerForm({
           ① 働く時間帯を選択
         </p>
         <p className="text-xs text-muted-foreground">この時間帯で下のカレンダーから日付をタップ。時間を変えて複数の時間帯も設定できます</p>
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <p className="text-[10px] text-muted-foreground mb-1">開始</p>
-            <select
-              className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-              value={currentStart}
-              onChange={(e) => setCurrentStart(e.target.value)}
-            >
-              {START_TIME_OPTIONS.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+        <div className="flex items-center gap-2">
+          {/* 開始 */}
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1 text-center">開始</p>
+            <div className="flex items-center gap-1">
+              <select
+                className="text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background w-[3.8rem] text-center"
+                value={currentStart.split(':')[0]}
+                onChange={(e) => setCurrentStart(`${e.target.value}:${currentStart.split(':')[1]}`)}
+              >
+                {START_HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+              <span className="text-muted-foreground font-semibold">:</span>
+              <select
+                className="text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background w-[3.8rem] text-center"
+                value={currentStart.split(':')[1]}
+                onChange={(e) => setCurrentStart(`${currentStart.split(':')[0]}:${e.target.value}`)}
+              >
+                {TIME_MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
           </div>
-          <span className="text-muted-foreground mt-4">〜</span>
-          <div className="flex-1">
-            <p className="text-[10px] text-muted-foreground mb-1">終了</p>
-            <select
-              className="w-full text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background"
-              value={currentEnd}
-              onChange={(e) => setCurrentEnd(e.target.value)}
-            >
-              {END_TIME_OPTIONS.filter((t) => !currentStart || t > currentStart).map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+          <span className="text-muted-foreground text-sm mt-4">〜</span>
+          {/* 終了 */}
+          <div>
+            <p className="text-[10px] text-muted-foreground mb-1 text-center">終了</p>
+            <div className="flex items-center gap-1">
+              <select
+                className="text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background w-[3.8rem] text-center"
+                value={currentEnd.split(':')[0]}
+                onChange={(e) => {
+                  const h = e.target.value
+                  // 24時は00分固定
+                  const m = h === '24' ? '00' : currentEnd.split(':')[1]
+                  setCurrentEnd(`${h}:${m}`)
+                }}
+              >
+                {END_HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+              <span className="text-muted-foreground font-semibold">:</span>
+              <select
+                className="text-sm border border-border/60 rounded-xl px-2 py-1.5 bg-background w-[3.8rem] text-center"
+                value={currentEnd.split(':')[1]}
+                onChange={(e) => setCurrentEnd(`${currentEnd.split(':')[0]}:${e.target.value}`)}
+                disabled={currentEnd.split(':')[0] === '24'}
+              >
+                {TIME_MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
           </div>
         </div>
         {timeError && <p className="text-xs text-red-500">{timeError}</p>}
