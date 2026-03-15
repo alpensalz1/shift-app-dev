@@ -23,7 +23,7 @@ export function BottomNav() {
       staff?.employment_type === '役員' ||
       staff?.employment_type === 'システム管理者'
     setIsManager(manager)
-    setShowSalary(staff?.employment_type === 'アルバイト')
+    setShowSalary(staff?.employment_type === 'アルバイト' || staff?.employment_type === 'システム管理者')
     if (manager) {
       // 当月以降の未処理申請のみカウント（過去の放置申請で誤表示しないよう制限）
       const thisMonth = new Date()

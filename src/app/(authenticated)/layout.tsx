@@ -64,7 +64,7 @@ export default function AuthenticatedLayout({
           </div>
         </div>
         <div className="h-[2px] w-full" style={{ background: themeColor }} />
-</header>
+      </header>
       <main className="max-w-lg mx-auto">
         {children}
       </main>
