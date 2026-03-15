@@ -18,7 +18,7 @@ export function formatTime(time: string | null): string {
  * 24:00が上限（月またがなし）
  */
 export function calcHours(start: string, end: string | null): number {
-        const effectiveEnd = end ?? '24:00'
+  const effectiveEnd = end ?? '24:00'
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = effectiveEnd.split(':').map(Number)
   const startMin = sh * 60 + sm
@@ -29,10 +29,10 @@ export function calcHours(start: string, end: string | null): number {
 
 /**
  * 深夜手当を含めた給与計算
- * 22:00〜24:00は1.25間（24:00ば上限なので翌日は考慮しない）
+ * 22:00〜24:00は1.25倍（24:00が上限なので翌日は考慮しない）
  */
 export function calcWage(start: string, end: string | null, hourlyWage: number): number {
-        const effectiveEnd = end ?? '24:00'
+  const effectiveEnd = end ?? '24:00'
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = effectiveEnd.split(':').map(Number)
   const startMin = sh * 60 + sm

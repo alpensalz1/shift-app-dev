@@ -132,7 +132,7 @@ export default function SalaryPage() {
     )
   }
 
-  if (staff.employment_type !== 'アルバイト') {
+  if (staff.employment_type !== 'アルバイト' && staff.employment_type !== 'システム管理者') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center gap-4 animate-fade-in">
         <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">

@@ -665,11 +665,14 @@ function ClosedDatesTab() {
   const handleAdd = async () => {
     if (!newDate || saving) return
     setSaving(true)
-    const { error } = await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
-    if (error) { alert('休業日追加に失敗しました: ' + error.message); setSaving(false); return }
-    setNewDate(fmtDate(new Date())); setNewNote(''); setNewShopId('')
-    setSaving(false)
-    fetch_()
+    try {
+      const { error } = await supabase.from('closed_dates').insert({ date: newDate, shop_id: newShopId ? parseInt(newShopId) : null, note: newNote })
+      if (error) { alert('休業日追加に失敗しました: ' + error.message); return }
+      setNewDate(fmtDate(new Date())); setNewNote(''); setNewShopId('')
+      fetch_()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleDel = async (id: number) => {

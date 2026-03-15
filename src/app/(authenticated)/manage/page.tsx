@@ -265,37 +265,46 @@ function ShiftConfirmTab() {
       setConfirming(false)
       return
     }
-    // upsertのonConflict不整合を避けるためdelete→insertを使用
-    const { error: delErr } = await supabase.from('shifts_fixed')
-      .delete()
-      .eq('staff_id', req.staff_id)
-      .eq('date', req.date)
-      .eq('type', type)
-    if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); setConfirming(false); return }
-    const { error } = await supabase.from('shifts_fixed').insert({
-      date: req.date, shop_id: shopId, type,
-      staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
-    })
-    if (error) { setMessage('確定に失敗: ' + error.message); fetchAll() } // 削除後にinsertが失敗した場合でもUIを最新状態に更新
-    else { setMessage(`${req.staffs.name}のシフトを確定しました（${SHOP_NAMES[shopId]} / ${type}）`); fetchAll() }
-    setConfirming(false)
+    try {
+      // upsertのonConflict不整合を避けるためdelete→insertを使用
+      const { error: delErr } = await supabase.from('shifts_fixed')
+        .delete()
+        .eq('staff_id', req.staff_id)
+        .eq('date', req.date)
+        .eq('type', type)
+      if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); return }
+      const { error } = await supabase.from('shifts_fixed').insert({
+        date: req.date, shop_id: shopId, type,
+        staff_id: req.staff_id, start_time: split.start_time, end_time: split.end_time,
+      })
+      if (error) { setMessage('確定に失敗: ' + error.message); fetchAll() } // 削除後にinsertが失敗した場合でもUIを最新状態に更新
+      else { setMessage(`${req.staffs.name}のシフトを確定しました（${SHOP_NAMES[shopId]} / ${type}）`); fetchAll() }
+    } finally {
+      setConfirming(false)
+    }
   }
 
   const handleRemoveFixed = async (fixedId: number) => {
     setConfirming(true)
-    const { error } = await supabase.from('shifts_fixed').delete().eq('id', fixedId)
-    if (error) { setMessage('取り消しに失敗: ' + error.message); setConfirming(false); return }
-    setMessage('シフトを取り消しました')
-    fetchAll()
-    setConfirming(false)
+    try {
+      const { error } = await supabase.from('shifts_fixed').delete().eq('id', fixedId)
+      if (error) { setMessage('取り消しに失敗: ' + error.message); return }
+      setMessage('シフトを取り消しました')
+      fetchAll()
+    } finally {
+      setConfirming(false)
+    }
   }
 
   const handleReject = async (req: RequestWithStaff) => {
     setConfirming(true)
-    const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
-    if (error) setMessage('却下に失敗: ' + error.message)
-    else { setMessage(`${req.staffs.name}のシフトを却下しました`); fetchAll() }
-    setConfirming(false)
+    try {
+      const { error } = await supabase.from('shift_requests').update({ status: 'rejected' }).eq('id', req.id)
+      if (error) setMessage('却下に失敗: ' + error.message)
+      else { setMessage(`${req.staffs.name}のシフトを却下しました`); fetchAll() }
+    } finally {
+      setConfirming(false)
+    }
   }
 
   // 却下された申請を申請中（pending）に戻す
@@ -306,10 +315,13 @@ function ShiftConfirmTab() {
       return
     }
     setConfirming(true)
-    const { error } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('id', req.id)
-    if (error) setMessage('復元に失敗: ' + error.message)
-    else { setMessage(`${req.staffs.name}のシフト申請を申請中に戻しました`); fetchAll() }
-    setConfirming(false)
+    try {
+      const { error } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('id', req.id)
+      if (error) setMessage('復元に失敗: ' + error.message)
+      else { setMessage(`${req.staffs.name}のシフト申請を申請中に戻しました`); fetchAll() }
+    } finally {
+      setConfirming(false)
+    }
   }
 
   // アルバイトの仕込み・営業リクエストを店舗設定で自動分割して確定
@@ -320,29 +332,32 @@ function ShiftConfirmTab() {
     // shifts/page.tsx の isPartTimer 定義と一致させる
     const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
-    // この日のスタッフの既存確定をすべて削除してからinsert
-    const { error: delErr } = await supabase.from('shifts_fixed')
-      .delete()
-      .eq('staff_id', req.staff_id)
-      .eq('date', req.date)
-    if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); setConfirming(false); return }
-    const results = await Promise.all(
-      splits.map((s) =>
-        supabase.from('shifts_fixed').insert(
-          { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time }
+    try {
+      // この日のスタッフの既存確定をすべて削除してからinsert
+      const { error: delErr } = await supabase.from('shifts_fixed')
+        .delete()
+        .eq('staff_id', req.staff_id)
+        .eq('date', req.date)
+      if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); return }
+      const results = await Promise.all(
+        splits.map((s) =>
+          supabase.from('shifts_fixed').insert(
+            { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time }
+          )
         )
       )
-    )
-    const errResult = results.find((r) => r.error)
-    if (errResult?.error) {
-      setMessage('確定に失敗: ' + errResult.error.message)
-      fetchAll() // 削除後にinsertが失敗した場合でもUIを最新状態に更新
-    } else {
-      const typesStr = splits.map((s) => s.type).join('・')
-      setMessage(`${req.staffs.name}のシフトを自動分割確定しました（${SHOP_NAMES[shopId]} / ${typesStr}）`)
-      fetchAll()
+      const errResult = results.find((r) => r.error)
+      if (errResult?.error) {
+        setMessage('確定に失敗: ' + errResult.error.message)
+        fetchAll() // 削除後にinsertが失敗した場合でもUIを最新状態に更新
+      } else {
+        const typesStr = splits.map((s) => s.type).join('・')
+        setMessage(`${req.staffs.name}のシフトを自動分割確定しました（${SHOP_NAMES[shopId]} / ${typesStr}）`)
+        fetchAll()
+      }
+    } finally {
+      setConfirming(false)
     }
-    setConfirming(false)
   }
 
   const setClosedDay = async (dateStr: string) => {
