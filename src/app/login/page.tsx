@@ -41,17 +41,18 @@ function MatrixRain({ turbo = false }: { turbo?: boolean }) {
     const columns = Math.floor(canvas.width / fontSize)
     const drops: number[] = Array(columns).fill(0).map(() => Math.random() * -100)
 
-    const draw = () => {
-      // turbo 進捗（0→1 over 900ms）
+    const drawFrame = () => {
+      // turbo 進捗（0→1 over 1000ms）
       let t = 0
       if (turboRef.current && turboStartRef.current) {
-        t = Math.min((Date.now() - turboStartRef.current) / 900, 1)
+        t = Math.min((Date.now() - turboStartRef.current) / 1000, 1)
       }
-      const speedMult = 1 + t * 14          // 1x → 15x
-      const brightness = t                  // 0=緑 → 1=白
+      const speedMult = 1 + t * 11   // 1x → 12x
+      const brightness = t           // 0=緑 → 1=白
 
-      // trail 残像: turbo 中は薄く（速いので）
-      ctx.fillStyle = `rgba(0,0,0,${Math.max(0.02, 0.05 - brightness * 0.03)})`
+      // turbo 加速中はトレイルを短く（ハッキリ見せる）、最終盤は長め残像でグロー感
+      const fadeAlpha = t > 0.7 ? 0.08 : t > 0.2 ? 0.12 : 0.05
+      ctx.fillStyle = `rgba(0,0,0,${fadeAlpha})`
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.font = `${fontSize}px monospace`
 
@@ -61,29 +62,49 @@ function MatrixRain({ turbo = false }: { turbo?: boolean }) {
         const y = drops[i] * fontSize
 
         if (brightness > 0.05) {
-          // 緑 → 白 へ線形補間
-          const r = Math.min(255, Math.floor(brightness * 255))
-          const g = Math.min(255, Math.floor(80 + Math.random() * 175 + brightness * 175))
-          const b = Math.min(255, Math.floor(brightness * 255))
-          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, 0.7 + brightness * 0.3)})`
-          ctx.fillText(char, x, y)
+          // 緑 → 白 へ補間。先頭文字は常に白く輝く
+          const isHead = Math.random() < 0.15 + brightness * 0.6
+          if (isHead) {
+            ctx.fillStyle = `rgba(255,255,255,${0.85 + brightness * 0.15})`
+          } else {
+            const r = Math.min(255, Math.floor(brightness * 240))
+            const g = Math.min(255, Math.floor(120 + brightness * 135))
+            const b = Math.min(255, Math.floor(brightness * 240))
+            ctx.fillStyle = `rgba(${r},${g},${b},${0.6 + brightness * 0.4})`
+          }
         } else if (Math.random() > 0.5) {
           ctx.fillStyle = '#fff'
           ctx.fillText(char, x, y)
           ctx.fillStyle = '#0f0'
         } else {
           ctx.fillStyle = `rgba(0,${150 + Math.random() * 105},0,${0.5 + Math.random() * 0.5})`
-          ctx.fillText(char, x, y)
         }
+        ctx.fillText(char, x, y)
 
-        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0
+        // turbo 中は画面外ドロップを即リセット（密度を維持）
+        if (drops[i] * fontSize > canvas.height) {
+          drops[i] = turboRef.current ? Math.random() * -10 : (Math.random() > 0.975 ? 0 : drops[i])
+        }
         drops[i] += speedMult
       }
     }
 
-    const interval = setInterval(draw, 50)
+    // requestAnimationFrame でループ
+    // turbo 中は毎フレーム（~60fps）描画、通常時は 50ms スロットル（~20fps）
+    let rafId: number
+    let lastNormal = 0
+    const loop = (now: number) => {
+      rafId = requestAnimationFrame(loop)
+      if (turboRef.current) {
+        drawFrame()
+      } else if (now - lastNormal >= 50) {
+        lastNormal = now
+        drawFrame()
+      }
+    }
+    rafId = requestAnimationFrame(loop)
     return () => {
-      clearInterval(interval)
+      cancelAnimationFrame(rafId)
       window.removeEventListener('resize', resize)
     }
   }, [])
@@ -292,29 +313,82 @@ function MatrixAdminLogin({
           100% { opacity: 1; }
         }
         @keyframes acceptedPop {
-          0%   { transform: scale(0.4); opacity: 0; }
-          65%  { transform: scale(1.08); opacity: 1; }
-          100% { transform: scale(1);   opacity: 1; }
+          0%   { transform: scale(0.25) translateY(16px); opacity: 0; filter: blur(8px); }
+          55%  { transform: scale(1.05) translateY(-3px); opacity: 1; filter: blur(0); }
+          75%  { transform: scale(0.98) translateY(1px); }
+          100% { transform: scale(1)    translateY(0);   opacity: 1; }
+        }
+        @keyframes acceptedSweep {
+          from { transform: skewX(-12deg) translateX(-120%); }
+          to   { transform: skewX(-12deg) translateX(500%); }
+        }
+        @keyframes borderPulse {
+          0%, 100% { box-shadow: 0 0 30px rgba(0,255,70,0.5), 0 0 80px rgba(0,255,70,0.2), inset 0 0 20px rgba(0,255,70,0.05); }
+          50%      { box-shadow: 0 0 60px rgba(0,255,70,0.8), 0 0 140px rgba(0,255,70,0.3), inset 0 0 30px rgba(0,255,70,0.1); }
+        }
+        @keyframes welcomeFade {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
 
-      {/* PASSCODE ACCEPTED. ポップ */}
+      {/* PASSCODE ACCEPTED ポップ */}
       {showAccepted && (
         <div className="fixed inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 35 }}>
           <div style={{
-            animation: 'acceptedPop 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards',
-            background: 'rgba(0,0,0,0.75)',
-            border: '1px solid rgba(0,255,70,0.7)',
+            animation: 'acceptedPop 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards, borderPulse 1.5s ease-in-out 0.4s infinite',
+            background: 'rgba(0,4,0,0.88)',
+            border: '1px solid rgba(0,255,70,0.75)',
             borderRadius: '10px',
-            padding: '28px 52px',
+            padding: '30px 56px',
             textAlign: 'center',
-            boxShadow: '0 0 40px rgba(0,255,60,0.4), inset 0 0 20px rgba(0,255,60,0.05)',
+            position: 'relative',
+            overflow: 'hidden',
           }}>
-            <p style={{ color: '#00ff44', fontFamily: 'monospace', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '10px', opacity: 0.8 }}>
-              ✓ AUTHENTICATION COMPLETE
+            {/* スキャンラインスイープ */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0,
+              width: '35%', height: '100%',
+              background: 'linear-gradient(90deg, transparent, rgba(0,255,70,0.18), transparent)',
+              animation: 'acceptedSweep 0.7s ease-out 0.3s forwards',
+            }} />
+            {/* ラベル */}
+            <p style={{
+              color: '#00cc44', fontFamily: 'monospace', fontSize: '10px',
+              letterSpacing: '0.22em', marginBottom: '14px',
+              textTransform: 'uppercase', opacity: 0.75,
+            }}>
+              ✓ &nbsp; authentication&nbsp;successful
             </p>
-            <p style={{ color: '#ffffff', fontFamily: 'monospace', fontSize: '26px', fontWeight: 'bold', letterSpacing: '0.08em' }}>
-              PASSCODE ACCEPTED ^_^
+            {/* メインテキスト */}
+            <p style={{
+              color: '#00ff88', fontFamily: 'monospace', fontSize: '24px',
+              fontWeight: 'bold', letterSpacing: '0.07em',
+              textShadow: '0 0 24px rgba(0,255,100,0.9), 0 0 48px rgba(0,255,100,0.4)',
+              marginBottom: '10px',
+            }}>
+              PASSCODE ACCEPTED
+            </p>
+            {/* サブテキスト */}
+            <p style={{
+              color: '#ffffff', fontFamily: 'monospace', fontSize: '15px',
+              letterSpacing: '0.05em', opacity: 0.9,
+              textShadow: '0 0 12px rgba(255,255,255,0.6)',
+              animation: 'welcomeFade 0.4s ease-out 0.45s both',
+            }}>
+              Welcome Issa&nbsp;&nbsp;^_^
+            </p>
+            {/* 区切り線 */}
+            <div style={{
+              marginTop: '18px',
+              height: '1px',
+              background: 'linear-gradient(90deg, transparent, rgba(0,255,70,0.5), transparent)',
+            }} />
+            <p style={{
+              color: '#00ff44', fontFamily: 'monospace', fontSize: '9px',
+              letterSpacing: '0.18em', marginTop: '10px', opacity: 0.45,
+            }}>
+              ROOT ACCESS GRANTED &nbsp;·&nbsp; CLEARANCE: OMEGA
             </p>
           </div>
         </div>
