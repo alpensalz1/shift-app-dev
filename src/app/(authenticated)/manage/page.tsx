@@ -31,6 +31,7 @@ import {
   Wand2,
   ChevronUp,
   ChevronDown,
+  UserPlus,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -101,6 +102,8 @@ function ShiftConfirmTab() {
   const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set())
   const [closedDates, setClosedDates] = useState<string[]>([])
   const [offRequests, setOffRequests] = useState<OffRequest[]>([])
+  const [addStaffModal, setAddStaffModal] = useState<{ shopId: number; type: '仕込み' | '営業' } | null>(null)
+  const [addingStaff, setAddingStaff] = useState(false)
   const autoAdvancedRef = useRef(false)
   // 月切替時のfetch競合を防ぐためのバージョン管理（古い月のfetchが新しい月のデータを上書きしないよう）
   const fetchVersionRef = useRef(0)
@@ -372,6 +375,34 @@ function ShiftConfirmTab() {
     }
   }
 
+  // 社員・役員をシフト確定に直接追加（店舗デフォルト時間で挿入）
+  const handleAddStaff = async (staffId: number) => {
+    if (!addStaffModal || !selectedDate) return
+    const { shopId, type } = addStaffModal
+    const cfg = configs.find((c) => c.shop_id === shopId && c.type === type)
+    if (!cfg) { setMessage('店舗設定が見つかりません'); return }
+    setAddingStaff(true)
+    try {
+      const { error } = await supabase.from('shifts_fixed').insert({
+        date: selectedDate,
+        shop_id: shopId,
+        type,
+        staff_id: staffId,
+        start_time: cfg.default_start_time,
+        end_time: cfg.default_end_time,
+      })
+      if (error) { setMessage('追加に失敗: ' + error.message) }
+      else {
+        const staffName = allStaffs.find((s) => s.id === staffId)?.name || ''
+        setMessage(`${staffName}を${SHOP_NAMES[shopId]} ${type}に追加しました`)
+        setAddStaffModal(null)
+        fetchAll()
+      }
+    } finally {
+      setAddingStaff(false)
+    }
+  }
+
   // アルバイトの仕込み・営業リクエストを店舗設定で自動分割して確定
   const handleAutoConfirm = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
@@ -536,17 +567,29 @@ function ShiftConfirmTab() {
               <div className="grid grid-cols-2 gap-2">
                 {staffingStatus.map((s) => (
                   <div key={`${s.shopId}-${s.type}`}
-                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs ${s.diff >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                    <div>
-                      <div className="font-medium text-[11px]">{s.shopName}</div>
-                      <span className={`px-1.5 py-0.5 rounded-full ${s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{s.type}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-base font-bold ${s.diff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{s.filled}/{s.required}</div>
-                      <div className={`text-[10px] ${s.diff >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {s.diff > 0 ? `+${s.diff}名` : s.diff === 0 ? '充足' : `${s.diff}名不足`}
+                    className={`flex flex-col gap-1.5 p-2.5 rounded-lg border text-xs ${s.diff >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-[11px]">{s.shopName}</div>
+                        <span className={`px-1.5 py-0.5 rounded-full ${s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{s.type}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-base font-bold ${s.diff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{s.filled}/{s.required}</div>
+                        <div className={`text-[10px] ${s.diff >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {s.diff > 0 ? `+${s.diff}名` : s.diff === 0 ? '充足' : `${s.diff}名不足`}
+                        </div>
                       </div>
                     </div>
+                    {s.diff < 0 && (
+                      <button
+                        onClick={() => setAddStaffModal({ shopId: s.shopId, type: s.type as '仕込み' | '営業' })}
+                        disabled={confirming}
+                        className="w-full flex items-center justify-center gap-1 h-7 rounded-md border border-red-300 bg-white text-red-600 text-[11px] font-medium hover:bg-red-50 transition-colors disabled:opacity-40"
+                      >
+                        <UserPlus className="h-3 w-3" />
+                        社員を追加
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -710,6 +753,61 @@ function ShiftConfirmTab() {
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">この日のシフト希望はありません</p>
             )}
+
+            {/* 社員・役員追加モーダル */}
+            {addStaffModal && (() => {
+              const offOnDate = selectedDate ? (offByDate[selectedDate] || {}) : {}
+              const alreadyFixedStaffIds = new Set(
+                selectedFixed
+                  .filter((f) => f.shop_id === addStaffModal.shopId && f.type === addStaffModal.type)
+                  .map((f) => f.staff_id)
+              )
+              const candidates = allStaffs.filter((s) =>
+                (s.employment_type === '社員' || s.employment_type === '役員') &&
+                offOnDate[s.id] !== '休み' &&
+                !alreadyFixedStaffIds.has(s.id)
+              )
+              return (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setAddStaffModal(null)}>
+                  <div className="w-full max-w-sm bg-background rounded-t-2xl p-5 pb-8 space-y-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">
+                        {SHOP_NAMES[addStaffModal.shopId]}・{addStaffModal.type} に追加
+                      </h3>
+                      <button onClick={() => setAddStaffModal(null)} className="p-1 text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      店舗のデフォルト時間で確定シフトに追加します。休み申請中の方は表示されません。
+                    </p>
+                    {candidates.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-4">追加できる社員・役員がいません</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                        {candidates.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => handleAddStaff(s.id)}
+                            disabled={addingStaff}
+                            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border bg-background hover:bg-accent transition-colors disabled:opacity-50 text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{s.name}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${s.employment_type === '社員' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {s.employment_type}
+                              </span>
+                            </div>
+                            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {addingStaff && <div className="flex justify-center"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+                  </div>
+                </div>
+              )
+            })()}
 
             {message && (
               <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>{message}</p>
