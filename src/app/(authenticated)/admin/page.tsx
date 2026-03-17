@@ -11,7 +11,7 @@ import { calcWage, calcHours } from '@/lib/utils'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
   ChevronLeft, ChevronRight, Loader2, Plus,
-  DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase
+  DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase, RefreshCw
 } from 'lucide-react'
 
 type Tab = 'labor' | 'staff' | 'fulfillment' | 'closed' | 'report'
@@ -417,7 +417,16 @@ function StaffManagementTab({ isSystemAdmin }: { isSystemAdmin: boolean }) {
       <div className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
         <div className="px-3 py-2.5 border-b border-border/30 flex items-center justify-between">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">スタッフ一覧</h3>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{staffs.length}名</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{staffs.length}名</span>
+            <button
+              onClick={fetchData}
+              className="p-1 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-all press-effect"
+              title="更新"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          </div>
         </div>
         <div className="divide-y divide-border/30">
           {staffs.map((s, i) => {
