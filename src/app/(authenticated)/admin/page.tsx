@@ -459,8 +459,12 @@ function StaffManagementTab() {
                     )}
                   </div>
                 </div>
+                <div className="mt-1 ml-1 flex items-center gap-1">
+                  <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">パスコード</span>
+                  <span className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{s.token}</span>
+                </div>
                 {s.employment_type === 'アルバイト' && hist.length > 0 && (
-                  <div className="mt-1.5 ml-1 space-y-0.5">
+                  <div className="mt-0.5 ml-1 space-y-0.5">
                     {hist.slice(0, 3).map(h => (
                       <p key={h.id} className="text-[10px] text-muted-foreground/70 tabular-nums">
                         {h.effective_from} ~ {h.effective_to || '現在'}: ¥{h.wage.toLocaleString()}
