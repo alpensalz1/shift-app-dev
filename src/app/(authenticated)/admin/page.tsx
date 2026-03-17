@@ -54,6 +54,7 @@ export default function AdminPage() {
   const router = useRouter()
   const [staffLoaded, setStaffLoaded] = useState(false)
   const [isAuthorized, setIsAuthorized] = useState(false)
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false)
   const [tab, setTab] = useState<Tab>('labor')
   const [month, setMonth] = useState(() => {
     const d = new Date()
@@ -68,6 +69,7 @@ export default function AdminPage() {
       staff.employment_type === 'システム管理者'
     )
     setIsAuthorized(authorized)
+    setIsSystemAdmin(!!staff && staff.employment_type === 'システム管理者')
     setStaffLoaded(true)
     if (!authorized) router.replace('/home')
   }, [router])
@@ -140,7 +142,7 @@ export default function AdminPage() {
       )}
 
       {tab === 'labor' && <LaborCostTab month={month} />}
-      {tab === 'staff' && <StaffManagementTab />}
+      {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} />}
       {tab === 'fulfillment' && <FulfillmentTab month={month} />}
       {tab === 'closed' && <ClosedDatesTab />}
       {tab === 'report' && <MonthlyReportTab month={month} />}
@@ -246,7 +248,7 @@ function LaborCostTab({ month }: { month: string }) {
 }
 
 /* ── スタッフ管理タブ ── */
-function StaffManagementTab() {
+function StaffManagementTab({ isSystemAdmin }: { isSystemAdmin: boolean }) {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
   const [newName, setNewName] = useState('')
@@ -459,10 +461,12 @@ function StaffManagementTab() {
                     )}
                   </div>
                 </div>
-                <div className="mt-1 ml-1 flex items-center gap-1">
-                  <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">パスコード</span>
-                  <span className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{s.token}</span>
-                </div>
+                {isSystemAdmin && (
+                  <div className="mt-1 ml-1 flex items-center gap-1">
+                    <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">パスコード</span>
+                    <span className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{s.token}</span>
+                  </div>
+                )}
                 {s.employment_type === 'アルバイト' && hist.length > 0 && (
                   <div className="mt-0.5 ml-1 space-y-0.5">
                     {hist.slice(0, 3).map(h => (
