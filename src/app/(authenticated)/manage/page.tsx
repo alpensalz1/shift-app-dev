@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { getStoredStaff } from '@/lib/auth'
+import { getStoredStaff, storeStaff } from '@/lib/auth'
+import { MatrixAdminOverlay } from '@/components/matrix-admin-overlay'
 import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
 import { formatTime, getSubmissionPeriod } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -1177,6 +1178,43 @@ export default function ManagePage() {
   const [staffLoaded, setStaffLoaded] = useState(false)
   const [activeTab, setActiveTab] = useState<ManageTab>('confirm')
 
+  // ── Matrix 5-tap admin ──
+  const tapCountRef = useRef(0)
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showAdminLogin, setShowAdminLogin] = useState(false)
+  const [adminToken, setAdminToken] = useState('')
+  const [adminError, setAdminError] = useState('')
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [turboMode, setTurboMode] = useState(false)
+  const [adminName, setAdminName] = useState('OPERATOR')
+
+  const handleTabBarTap = () => {
+    tapCountRef.current += 1
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0
+      setShowAdminLogin(true)
+      return
+    }
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0 }, 2000)
+  }
+
+  const handleAdminLogin = async () => {
+    setAdminLoading(true)
+    setAdminError('')
+    const { data, error: dbError } = await supabase
+      .from('staffs').select('*')
+      .eq('token', adminToken.trim()).eq('is_active', true).single()
+    setAdminLoading(false)
+    if (dbError || !data) { setAdminError('Invalid token. Access denied.'); return }
+    if (data.employment_type !== 'システム管理者') {
+      setAdminError('ACCESS RESTRICTED. Authorization level insufficient.'); return
+    }
+    storeStaff(data)
+    setAdminName(data.name ?? 'OPERATOR')
+    setTurboMode(true)
+  }
+
   useEffect(() => {
     const staff = getStoredStaff()
     setCurrentStaff(staff)
@@ -1190,35 +1228,50 @@ export default function ManagePage() {
   if (!currentStaff || (currentStaff.employment_type !== '社員' && currentStaff.employment_type !== '役員' && currentStaff.employment_type !== 'システム管理者')) return null
 
   return (
-    <div className="space-y-4">
-      {/* タブ切替 */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        <button onClick={() => setActiveTab('confirm')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'confirm' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <ClipboardCheck className="h-4 w-4" />
-          シフト確定
-        </button>
-        <button onClick={() => setActiveTab('rules')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'rules' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <Settings className="h-4 w-4" />
-          ルール設定
-        </button>
-        <button onClick={() => setActiveTab('auto')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'auto' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <Wand2 className="h-4 w-4" />
-          自動生成
-        </button>
-      </div>
+    <>
+      {showAdminLogin && (
+        <MatrixAdminOverlay
+          adminToken={adminToken}
+          setAdminToken={setAdminToken}
+          adminError={adminError}
+          adminLoading={adminLoading}
+          onSubmit={handleAdminLogin}
+          onBack={() => { setShowAdminLogin(false); setAdminToken(''); setAdminError('') }}
+          turbo={turboMode}
+          onTurboDone={() => router.replace('/admin')}
+          adminName={adminName}
+        />
+      )}
+      <div className="space-y-4">
+        {/* タブ切替 */}
+        <div className="flex gap-2 overflow-x-auto pb-1" onClick={handleTabBarTap}>
+          <button onClick={(e) => { e.stopPropagation(); setActiveTab('confirm') }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === 'confirm' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+            }`}>
+            <ClipboardCheck className="h-4 w-4" />
+            シフト確定
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); setActiveTab('rules') }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === 'rules' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+            }`}>
+            <Settings className="h-4 w-4" />
+            ルール設定
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); setActiveTab('auto') }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === 'auto' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+            }`}>
+            <Wand2 className="h-4 w-4" />
+            自動生成
+          </button>
+        </div>
 
-      {activeTab === 'confirm' && <ShiftConfirmTab />}
-      {activeTab === 'rules' && <RulesTab />}
-      {activeTab === 'auto' && <AutoGenerateTab />}
-    </div>
+        {activeTab === 'confirm' && <ShiftConfirmTab />}
+        {activeTab === 'rules' && <RulesTab />}
+        {activeTab === 'auto' && <AutoGenerateTab />}
+      </div>
+    </>
   )
 }
