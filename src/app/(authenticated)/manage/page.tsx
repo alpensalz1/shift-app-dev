@@ -98,6 +98,7 @@ function ShiftConfirmTab() {
   const [confirming, setConfirming] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [expandedRequests, setExpandedRequests] = useState<Set<number>>(new Set())
   const [closedDates, setClosedDates] = useState<string[]>([])
   const [offRequests, setOffRequests] = useState<OffRequest[]>([])
   const autoAdvancedRef = useRef(false)
@@ -324,6 +325,53 @@ function ShiftConfirmTab() {
     }
   }
 
+  const toggleExpanded = (reqId: number) => {
+    setExpandedRequests((prev) => {
+      const next = new Set(prev)
+      if (next.has(reqId)) next.delete(reqId)
+      else next.add(reqId)
+      return next
+    })
+  }
+
+  // 未処理の申請を指定店舗で一括確定（案C）
+  const handleBatchConfirm = async (shopId: number) => {
+    const pendingReqs = selectedRequests.filter((req) => {
+      if (req.status === 'rejected') return false
+      const fixedForStaff = selectedFixed.filter((f) => f.staff_id === req.staff_id)
+      if (req.type === '仕込み・営業') {
+        return !(fixedForStaff.some((f) => f.type === '仕込み') && fixedForStaff.some((f) => f.type === '営業'))
+      }
+      return !fixedForStaff.some((f) => f.type === req.type)
+    })
+    if (pendingReqs.length === 0) return
+    if (!window.confirm(`未処理の${pendingReqs.length}件を全て${SHOP_NAMES[shopId]}で確定します。よろしいですか？`)) return
+    setConfirming(true)
+    setMessage('')
+    try {
+      for (const req of pendingReqs) {
+        const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
+        const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
+        await supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date)
+        if (splits.length > 0) {
+          await supabase.from('shifts_fixed').insert(
+            splits.map((s) => ({
+              date: req.date, shop_id: shopId, type: s.type,
+              staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
+            }))
+          )
+        }
+      }
+      setMessage(`${pendingReqs.length}件を${SHOP_NAMES[shopId]}で一括確定しました`)
+      fetchAll()
+    } catch (e: any) {
+      setMessage('一括確定に失敗: ' + (e.message || ''))
+      fetchAll()
+    } finally {
+      setConfirming(false)
+    }
+  }
+
   // アルバイトの仕込み・営業リクエストを店舗設定で自動分割して確定
   const handleAutoConfirm = async (req: RequestWithStaff, shopId: number) => {
     setConfirming(true)
@@ -536,11 +584,44 @@ function ShiftConfirmTab() {
                 <h4 className="text-xs font-medium text-amber-700 mb-2 flex items-center gap-1">
                   <Users className="h-3 w-3" /> シフト希望
                 </h4>
+
+                {/* 案C: 一括確定ボタン（未処理2件以上のときのみ表示） */}
+                {(() => {
+                  const pendingCount = selectedRequests.filter((req) => {
+                    if (req.status === 'rejected') return false
+                    const fixedForStaff = selectedFixed.filter((f) => f.staff_id === req.staff_id)
+                    if (req.type === '仕込み・営業') {
+                      return !(fixedForStaff.some((f) => f.type === '仕込み') && fixedForStaff.some((f) => f.type === '営業'))
+                    }
+                    return !fixedForStaff.some((f) => f.type === req.type)
+                  }).length
+                  if (pendingCount < 2) return null
+                  return (
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        onClick={() => handleBatchConfirm(1)}
+                        disabled={confirming}
+                        className="flex-1 h-8 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 transition-colors press-effect"
+                      >
+                        未処理を全員 三茶で確定（{pendingCount}件）
+                      </button>
+                      <button
+                        onClick={() => handleBatchConfirm(2)}
+                        disabled={confirming}
+                        className="flex-1 h-8 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 transition-colors press-effect"
+                      >
+                        未処理を全員 下北で確定（{pendingCount}件）
+                      </button>
+                    </div>
+                  )
+                })()}
+
                 <div className="space-y-2">
                   {selectedRequests.map((req) => {
                     const isRejected = req.status === 'rejected'
                     const alreadyFixed = selectedFixed.some((f) => f.staff_id === req.staff_id)
                     const fixedForStaff = selectedFixed.filter(f => f.staff_id === req.staff_id)
+                    const isExpanded = expandedRequests.has(req.id)
                     return (
                       <div key={req.id} className={`p-3 rounded-lg border ${isRejected ? 'bg-red-50 border-red-200 opacity-70' : alreadyFixed ? 'bg-emerald-50/50 border-emerald-200' : 'bg-background'}`}>
                         <div className="flex items-center justify-between mb-2">
@@ -577,26 +658,48 @@ function ShiftConfirmTab() {
                         {isRejected ? (
                           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleRestore(req)}>申請に戻す</Button>
                         ) : (
-                          <div className="flex gap-2 flex-wrap">
-                            {(req.type === '仕込み' || req.type === '仕込み・営業') && (
+                          <div className="space-y-1.5">
+                            {/* 案A: 仕込み・営業は主ボタン2つ＋詳細トグル */}
+                            {req.type === '仕込み・営業' ? (
                               <>
-                                <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
-                                <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                <div className="flex gap-2">
+                                  <Button size="sm" className="flex-1 h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
+                                  <Button size="sm" className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
+                                </div>
+                                <button
+                                  onClick={() => toggleExpanded(req.id)}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5"
+                                >
+                                  {isExpanded ? '▲ 詳細を閉じる' : '▼ 仕込み/営業を個別に確定'}
+                                </button>
+                                {isExpanded && (
+                                  <div className="flex gap-1.5 flex-wrap pt-0.5">
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                  </div>
+                                )}
                               </>
+                            ) : (
+                              /* 仕込みのみ・営業のみはそのまま3ボタン */
+                              <div className="flex gap-2 flex-wrap">
+                                {(req.type === '仕込み') && (
+                                  <>
+                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                  </>
+                                )}
+                                {(req.type === '営業') && (
+                                  <>
+                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                  </>
+                                )}
+                                <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
+                              </div>
                             )}
-                            {(req.type === '営業' || req.type === '仕込み・営業') && (
-                              <>
-                                <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
-                                <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
-                              </>
-                            )}
-                            {req.type === '仕込み・営業' && (
-                              <>
-                                <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
-                                <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
-                              </>
-                            )}
-                            <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
                           </div>
                         )}
                       </div>
