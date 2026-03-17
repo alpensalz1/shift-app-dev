@@ -716,7 +716,8 @@ export default function LoginPage() {
       setAdminError('ACCESS RESTRICTED. Authorization level insufficient.')
       return
     }
-    storeStaff(data)
+    // システム管理者として強制セット（DBの値に依らずデモと同じ権限を保証）
+    storeStaff({ ...data, employment_type: 'システム管理者' })
     // ナビゲーションは turbo 演出が終わったあと onTurboDone で行う
     setTurboMode(true)
   }
