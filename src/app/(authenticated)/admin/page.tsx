@@ -142,7 +142,7 @@ export default function AdminPage() {
       )}
 
       {tab === 'labor' && <LaborCostTab month={month} />}
-      {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} />}
+      {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} isAuthorized={isAuthorized} />}
       {tab === 'fulfillment' && <FulfillmentTab month={month} />}
       {tab === 'closed' && <ClosedDatesTab />}
       {tab === 'report' && <MonthlyReportTab month={month} />}
@@ -248,7 +248,7 @@ function LaborCostTab({ month }: { month: string }) {
 }
 
 /* ── スタッフ管理タブ ── */
-function StaffManagementTab({ isSystemAdmin }: { isSystemAdmin: boolean }) {
+function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: boolean; isAuthorized: boolean }) {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [wageHistories, setWageHistories] = useState<WageHistory[]>([])
   const [newName, setNewName] = useState('')
@@ -470,7 +470,7 @@ function StaffManagementTab({ isSystemAdmin }: { isSystemAdmin: boolean }) {
                     )}
                   </div>
                 </div>
-                {isSystemAdmin && (
+                {isAuthorized && (
                   <div className="mt-1 ml-1 flex items-center gap-1">
                     <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">パスコード</span>
                     <span className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{s.token}</span>
