@@ -452,17 +452,19 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
             const hist = wageHistories.filter(w => w.staff_id === s.id)
             return (
               <div key={s.id} className="px-3 py-2.5 animate-slide-up" style={{ animationDelay: `${i * 25}ms` }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[13px] font-semibold truncate">{s.name}</span>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${typeColors[s.employment_type] || 'bg-gray-100 text-gray-600'}`}>
-                      {s.employment_type}
-                    </span>
-                    {s.employment_type === 'アルバイト' && s.wage > 0 && (
-                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">¥{s.wage.toLocaleString()}/h</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                {/* 1行目: 名前・雇用形態・時給 */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[13px] font-semibold truncate">{s.name}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${typeColors[s.employment_type] || 'bg-gray-100 text-gray-600'}`}>
+                    {s.employment_type}
+                  </span>
+                  {s.employment_type === 'アルバイト' && s.wage > 0 && (
+                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">¥{s.wage.toLocaleString()}/h</span>
+                  )}
+                </div>
+                {/* 2行目: アクションボタン */}
+                {(s.employment_type === 'アルバイト' || (isAuthorized && s.name !== 'いっさ') || s.name !== 'いっさ') && (
+                  <div className="flex items-center gap-1 flex-wrap mt-1.5">
                     {s.employment_type === 'アルバイト' && (
                       <>
                         <button
@@ -496,7 +498,7 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
                       </button>
                     )}
                   </div>
-                </div>
+                )}
                 {isAuthorized && (
                   <div className="mt-1 ml-1 flex items-center gap-1">
                     <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider">パスコード</span>
@@ -505,7 +507,7 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
                 )}
                 {s.employment_type === 'アルバイト' && hist.length > 0 && (
                   <div className="mt-0.5 ml-1 space-y-0.5">
-                    {hist.slice(0, 3).map(h => (
+                    {hist.slice(0, 2).map(h => (
                       <p key={h.id} className="text-[10px] text-muted-foreground/70 tabular-nums">
                         {h.effective_from} ~ {h.effective_to || '現在'}: ¥{h.wage.toLocaleString()}
                       </p>
