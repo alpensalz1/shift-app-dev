@@ -257,6 +257,7 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [editingWage, setEditingWage] = useState<{ staffId: number; wage: string; effectiveFrom: string } | null>(null)
+  const [editingName, setEditingName] = useState<{ staffId: number; name: string } | null>(null)
   // handleSoftDelete/handleToggleType は saving ガードがないため複数の fetchData が並走する可能性がある
   // fetchVersionRef で古い fetch 結果が新しい fetch 結果を上書きしないよう管理する
   const fetchVersionRef = useRef(0)
@@ -344,6 +345,24 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
     } catch (e: any) {
       alert('時給変更に失敗しました: ' + (e.message || ''))
       // 失敗後もDB実態に合わせてUIを更新する
+      fetchData()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleNameChange = async () => {
+    if (!editingName || saving) return
+    const trimmed = editingName.name.trim()
+    if (!trimmed) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('staffs').update({ name: trimmed }).eq('id', editingName.staffId)
+      if (error) throw new Error('名前更新エラー: ' + error.message)
+      setEditingName(null)
+      fetchData()
+    } catch (e: any) {
+      alert('名前の変更に失敗しました: ' + (e.message || ''))
       fetchData()
     } finally {
       setSaving(false)
@@ -460,6 +479,14 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
                         </button>
                       </>
                     )}
+                    {isAuthorized && s.name !== 'いっさ' && (
+                      <button
+                        onClick={() => setEditingName({ staffId: s.id, name: s.name })}
+                        className="text-[10px] px-2 py-1 rounded-lg bg-muted/60 text-muted-foreground hover:bg-muted transition-colors press-effect"
+                      >
+                        名前変更
+                      </button>
+                    )}
                     {s.name !== 'いっさ' && (
                       <button
                         onClick={() => handleSoftDelete(s)}
@@ -490,6 +517,34 @@ function StaffManagementTab({ isSystemAdmin, isAuthorized }: { isSystemAdmin: bo
           })}
         </div>
       </div>
+
+      {/* Name edit modal */}
+      {editingName && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingName(null)}>
+          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl ring-1 ring-border/20 animate-slide-up" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold mb-4">名前変更</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">新しい名前</label>
+                <Input
+                  value={editingName.name}
+                  onChange={e => setEditingName({ ...editingName, name: e.target.value })}
+                  className="mt-1"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditingName(null)} className="flex-1 h-9 rounded-lg border border-border text-sm font-medium hover:bg-muted/50 transition-colors press-effect">
+                  キャンセル
+                </button>
+                <button onClick={handleNameChange} disabled={saving || !editingName.name.trim()} className="flex-1 h-9 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed press-effect">
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Wage edit modal */}
       {editingWage && (
