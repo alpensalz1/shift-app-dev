@@ -17,7 +17,7 @@ import {
   ClipboardList, XCircle
 } from 'lucide-react'
 
-type Tab = 'labor' | 'staff' | 'fulfillment' | 'closed' | 'report' | 'submission'
+type Tab = 'labor' | 'staff' | 'closed' | 'report' | 'submission'
 
 interface WageHistory {
   id: number
@@ -81,7 +81,6 @@ export default function AdminPage() {
     { key: 'submission', label: '提出状況', icon: ClipboardList },
     { key: 'labor', label: '人件費', icon: DollarSign },
     { key: 'staff', label: 'スタッフ', icon: Users },
-    { key: 'fulfillment', label: '充足率', icon: TrendingUp },
     { key: 'closed', label: '休業日', icon: CalendarOff },
     { key: 'report', label: 'レポート', icon: FileText },
   ]
@@ -127,7 +126,7 @@ export default function AdminPage() {
       </div>
 
       {/* Month selector */}
-      {['labor', 'fulfillment', 'report'].includes(tab) && (
+      {['labor', 'report'].includes(tab) && (
         <div className="flex items-center justify-between bg-muted/40 rounded-2xl px-2 py-1.5">
           <button
             onClick={() => changeMonth(-1)}
@@ -148,7 +147,6 @@ export default function AdminPage() {
       {tab === 'submission' && <SubmissionStatusTab />}
       {tab === 'labor' && <LaborCostTab month={month} />}
       {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} isAuthorized={isAuthorized} />}
-      {tab === 'fulfillment' && <FulfillmentTab month={month} />}
       {tab === 'closed' && <ClosedDatesTab />}
       {tab === 'report' && <MonthlyReportTab month={month} />}
     </div>
