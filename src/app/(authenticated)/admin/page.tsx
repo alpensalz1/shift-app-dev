@@ -7,14 +7,17 @@ import { getStoredStaff } from '@/lib/auth'
 import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { calcWage, calcHours } from '@/lib/utils'
+import { calcWage, calcHours, getSubmissionPeriod } from '@/lib/utils'
+import { format } from 'date-fns'
+import { ja } from 'date-fns/locale'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
   ChevronLeft, ChevronRight, Loader2, Plus,
-  DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase, RefreshCw
+  DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase, RefreshCw,
+  ClipboardList, XCircle
 } from 'lucide-react'
 
-type Tab = 'labor' | 'staff' | 'fulfillment' | 'closed' | 'report'
+type Tab = 'labor' | 'staff' | 'fulfillment' | 'closed' | 'report' | 'submission'
 
 interface WageHistory {
   id: number
@@ -75,6 +78,7 @@ export default function AdminPage() {
   }, [router])
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
+    { key: 'submission', label: '提出状況', icon: ClipboardList },
     { key: 'labor', label: '人件費', icon: DollarSign },
     { key: 'staff', label: 'スタッフ', icon: Users },
     { key: 'fulfillment', label: '充足率', icon: TrendingUp },
@@ -141,6 +145,7 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === 'submission' && <SubmissionStatusTab />}
       {tab === 'labor' && <LaborCostTab month={month} />}
       {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} isAuthorized={isAuthorized} />}
       {tab === 'fulfillment' && <FulfillmentTab month={month} />}
@@ -987,6 +992,157 @@ function MonthlyReportTab({ month }: { month: string }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ── 提出状況タブ ── */
+function SubmissionStatusTab() {
+  const [staffs, setStaffs] = useState<Staff[]>([])
+  const [submittedPartIds, setSubmittedPartIds] = useState<Set<number>>(new Set())
+  const [submittedFullIds, setSubmittedFullIds] = useState<Set<number>>(new Set())
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const period = getSubmissionPeriod(new Date())
+  const periodStart = format(period.start, 'yyyy-MM-dd')
+  const periodEnd = format(period.end, 'yyyy-MM-dd')
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+    const [staffRes, partReqs, fullReqs] = await Promise.all([
+      supabase.from('staffs').select('*').neq('employment_type', 'システム管理者').order('name'),
+      supabase.from('shift_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
+      supabase.from('off_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
+    ])
+    setStaffs(staffRes.data || [])
+    setSubmittedPartIds(new Set((partReqs.data || []).map((r: any) => r.staff_id)))
+    setSubmittedFullIds(new Set((fullReqs.data || []).map((r: any) => r.staff_id)))
+    if (isRefresh) setRefreshing(false)
+    else setLoading(false)
+  }, [periodStart, periodEnd])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  )
+
+  const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
+  const fullTimers = staffs.filter(s => s.employment_type === '社員' || s.employment_type === '役員')
+  const partSubmitted = partTimers.filter(s => submittedPartIds.has(s.id))
+  const partNotSubmitted = partTimers.filter(s => !submittedPartIds.has(s.id))
+
+  return (
+    <div className="space-y-4">
+      {/* 対象期間バナー */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 py-3">
+        <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider mb-0.5">次回シフト対象期間</p>
+        <p className="text-sm font-bold text-indigo-900">
+          {format(period.start, 'M月d日（E）', { locale: ja })} 〜 {format(period.end, 'M月d日（E）', { locale: ja })}
+        </p>
+        <p className="text-xs text-indigo-600 mt-0.5">
+          締切：{format(period.deadline, 'M月d日（E）', { locale: ja })}
+        </p>
+      </div>
+
+      {/* アルバイト */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-0.5">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">アルバイト</h3>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {partSubmitted.length} / {partTimers.length} 名 提出済み
+          </span>
+        </div>
+
+        {partNotSubmitted.length > 0 && (
+          <div>
+            <p className="text-[10px] text-red-500 font-semibold mb-1 px-0.5">未提出</p>
+            <div className="rounded-xl bg-red-50 border border-red-200 divide-y divide-red-100 overflow-hidden">
+              {partNotSubmitted.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                    <XCircle className="h-3.5 w-3.5" />
+                    未提出
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {partSubmitted.length > 0 && (
+          <div>
+            <p className="text-[10px] text-emerald-600 font-semibold mb-1 px-0.5">提出済み</p>
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 divide-y divide-emerald-100 overflow-hidden">
+              {partSubmitted.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    提出済み
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {partTimers.length === 0 && (
+          <p className="text-xs text-muted-foreground px-0.5">アルバイトスタッフがいません</p>
+        )}
+      </div>
+
+      {/* 社員・役員 */}
+      {fullTimers.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-0.5">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">社員・役員</h3>
+          </div>
+          <div className="rounded-xl border bg-white divide-y overflow-hidden">
+            {fullTimers.map(s => {
+              const hasChange = submittedFullIds.has(s.id)
+              return (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{s.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${s.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
+                      {s.employment_type}
+                    </span>
+                  </div>
+                  {hasChange
+                    ? <span className="flex items-center gap-1 text-xs font-semibold text-amber-600">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        変更申請あり
+                      </span>
+                    : <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        フル出勤
+                      </span>
+                  }
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[10px] text-muted-foreground px-0.5">
+            ※ 社員・役員は変更なし＝フル出勤のため、提出有無は判別できません
+          </p>
+        </div>
+      )}
+
+      {/* 更新ボタン */}
+      <button
+        onClick={() => load(true)}
+        disabled={refreshing}
+        className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        更新
+      </button>
     </div>
   )
 }
