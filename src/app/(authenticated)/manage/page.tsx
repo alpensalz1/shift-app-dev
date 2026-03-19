@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
 import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
-import { formatTime, getSubmissionPeriod } from '@/lib/utils'
+import { formatTime, getSubmissionPeriod, isJapaneseHoliday, isWeekendOrHoliday } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -87,6 +87,31 @@ function autoSplitShift(
     { type: '仕込み', start_time: shikomiStart, end_time: split5 },
     { type: '営業', start_time: split5, end_time: endTime },
   ]
+}
+
+/**
+ * アルバイトの申請時間帯が、指定した店舗・シフト種別と時間的に重なるか判定する。
+ * 仕込み: reqEnd > '14:00'（アルバイト仕込み最小開始）かつ reqStart < splitTime
+ * 営業:   reqEnd > splitTime
+ */
+function canAssignShiftType(
+  reqStart: string,
+  reqEnd: string,
+  shopId: number,
+  shiftType: '仕込み' | '営業',
+  configs: ShiftConfig[]
+): boolean {
+  const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
+  if (!shikomiCfg) return shiftType === '営業'
+  const splitTime = shikomiCfg.default_end_time.substring(0, 5) // e.g. "17:00"
+  const minShikomiStart = '14:00'
+  const start5 = reqStart.substring(0, 5)
+  const end5 = reqEnd === '24:00:00' ? '24:00' : reqEnd.substring(0, 5)
+  if (shiftType === '仕込み') {
+    return end5 > minShikomiStart && start5 < splitTime
+  } else {
+    return end5 > splitTime
+  }
 }
 
 function ShiftConfirmTab() {
@@ -382,13 +407,19 @@ function ShiftConfirmTab() {
     const cfg = configs.find((c) => c.shop_id === shopId && c.type === type)
     if (!cfg) { setMessage('店舗設定が見つかりません'); return }
     setAddingStaff(true)
+    // 下北沢の仕込みは土日・祝日のみ11:00スタート（三軒茶屋はデフォルト時間を使用）
+    const dateObj = new Date(selectedDate + 'T00:00:00')
+    const startTime =
+      shopId === 2 && type === '仕込み' && isWeekendOrHoliday(dateObj)
+        ? '11:00:00'
+        : cfg.default_start_time
     try {
       const { error } = await supabase.from('shifts_fixed').insert({
         date: selectedDate,
         shop_id: shopId,
         type,
         staff_id: staffId,
-        start_time: cfg.default_start_time,
+        start_time: startTime,
         end_time: cfg.default_end_time,
       })
       if (error) { setMessage('追加に失敗: ' + error.message) }
@@ -512,6 +543,7 @@ function ShiftConfirmTab() {
               const isClosed = closedDates.includes(dateStr)
               const isSel = selectedDate === dateStr
               const dow = getDay(date)
+              const isHoliday = isJapaneseHoliday(date)
               return (
                 <button key={dateStr} onClick={() => setSelectedDate(isSel ? null : dateStr)}
                   className={`relative flex flex-col items-center justify-center rounded-lg py-1 min-h-[52px] text-sm transition-all cursor-pointer
@@ -519,11 +551,12 @@ function ShiftConfirmTab() {
                     ${!isSel && isClosed ? 'bg-rose-100 ring-1 ring-rose-300' : !isSel && fixed.length > 0 ? 'bg-emerald-50 ring-1 ring-emerald-300' : ''}
                     ${!isSel && pendingReqs.length > 0 && fixed.length === 0 ? 'bg-amber-50 ring-1 ring-amber-200' : pendingReqs.length > 0 ? 'ring-1 ring-amber-300' : ''}
                     ${!isSel && reqs.length === 0 && fixed.length === 0 ? 'hover:bg-accent' : ''}
-                    ${dow === 0 && !isSel ? 'text-red-500' : ''}
-                    ${dow === 6 && !isSel ? 'text-blue-500' : ''}
+                    ${(dow === 0 || isHoliday) && !isSel ? 'text-red-500' : ''}
+                    ${dow === 6 && !isHoliday && !isSel ? 'text-blue-500' : ''}
                   `}>
                   <span className="font-medium">{format(date, 'd')}</span>
                       {isClosed && !isSel && <span className="text-[8px] text-rose-500 font-bold leading-none">休</span>}
+                      {isHoliday && !isClosed && !isSel && <span className="text-[8px] text-red-400 font-bold leading-none">祝</span>}
                   {!isSel && (() => {
                     const aC = new Set(reqs.filter(r => r.staffs.employment_type === 'アルバイト').map(r => r.staff_id)).size
                     const socialEmployees = allStaffs.filter(s => s.employment_type === '社員')
@@ -718,26 +751,42 @@ function ShiftConfirmTab() {
                                 </button>
                                 {isExpanded && (
                                   <div className="flex gap-1.5 flex-wrap pt-0.5">
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                    {canAssignShiftType(req.start_time, req.end_time, 1, '仕込み', configs) && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                    )}
+                                    {canAssignShiftType(req.start_time, req.end_time, 2, '仕込み', configs) && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                    )}
+                                    {canAssignShiftType(req.start_time, req.end_time, 1, '営業', configs) && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                    )}
+                                    {canAssignShiftType(req.start_time, req.end_time, 2, '営業', configs) && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                    )}
                                   </div>
                                 )}
                               </>
                             ) : (
-                              /* 仕込みのみ・営業のみはそのまま3ボタン */
+                              /* 仕込みのみ・営業のみはそのまま3ボタン（時間重複チェック付き） */
                               <div className="flex gap-2 flex-wrap">
                                 {(req.type === '仕込み') && (
                                   <>
-                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
-                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                    {canAssignShiftType(req.start_time, req.end_time, 1, '仕込み', configs) && (
+                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                    )}
+                                    {canAssignShiftType(req.start_time, req.end_time, 2, '仕込み', configs) && (
+                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                    )}
                                   </>
                                 )}
                                 {(req.type === '営業') && (
                                   <>
-                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
-                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                    {canAssignShiftType(req.start_time, req.end_time, 1, '営業', configs) && (
+                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                    )}
+                                    {canAssignShiftType(req.start_time, req.end_time, 2, '営業', configs) && (
+                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                    )}
                                   </>
                                 )}
                                 <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
@@ -1048,7 +1097,8 @@ function AutoGenerateTab() {
   useEffect(() => { fetchData() }, [fetchData])
 
   // デフォルト時間を取得（shift_config は HH:MM:SS 形式のため HH:MM に正規化して返す）
-  const getDefaultTime = (shopId: number, type: '仕込み' | '営業'): { start: string; end: string } => {
+  // date を渡すと、下北沢（shopId=2）の仕込みは土日・祝日のみ11:00スタートになる
+  const getDefaultTime = (shopId: number, type: '仕込み' | '営業', date?: Date): { start: string; end: string } => {
     // shift_config の仕込みレコードは default_end_time が仕込み/営業の境界時刻を示す
     // default_start_time と default_end_time が同値の場合はconfig設定不備のため fallback を使用
     const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
@@ -1056,11 +1106,12 @@ function AutoGenerateTab() {
     const splitTime = (shikomiCfg?.default_end_time ?? '18:00:00').substring(0, 5)
     const closeTime = (eigyoCfg?.default_end_time ?? '24:00:00').substring(0, 5)
     if (type === '仕込み') {
-      const startTime = (shikomiCfg?.default_start_time ?? '10:00:00').substring(0, 5)
+      const configStart = (shikomiCfg?.default_start_time ?? '10:00:00').substring(0, 5)
       // startTime < splitTime なら正常なconfig、同値ならconfig不備なのでfallback
-      return startTime < splitTime
-        ? { start: startTime, end: splitTime }
-        : { start: '10:00', end: splitTime }
+      const baseStart = configStart < splitTime ? configStart : '10:00'
+      // 下北沢は土日・祝日のみ11:00スタート（三軒茶屋はデフォルト時間を使用）
+      const startTime = shopId === 2 && date && isWeekendOrHoliday(date) ? '11:00' : baseStart
+      return { start: startTime, end: splitTime }
     } else {
       return { start: splitTime, end: closeTime }
     }
@@ -1160,7 +1211,7 @@ function AutoGenerateTab() {
 
         // 仕込みのみの人の行を追加
         for (const staff of prepOnlyStaffList) {
-          const t = getDefaultTime(shopId, '仕込み')
+          const t = getDefaultTime(shopId, '仕込み', date)
           rows.push({
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: staff.id, staff_name: staff.name,
@@ -1171,7 +1222,7 @@ function AutoGenerateTab() {
 
         // 営業のみの人の行を追加
         for (const staff of eigyoOnlyStaffList) {
-          const t = getDefaultTime(shopId, '営業')
+          const t = getDefaultTime(shopId, '営業', date)
           rows.push({
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: staff.id, staff_name: staff.name,
@@ -1184,8 +1235,8 @@ function AutoGenerateTab() {
         if (fullDayStaff) {
           const isExec = fullDayStaff.employment_type === '役員'
           if (isExec) execShiftCount[fullDayStaff.id] = (execShiftCount[fullDayStaff.id] ?? 0) + 1
-          const t1 = getDefaultTime(shopId, '仕込み')
-          const t2 = getDefaultTime(shopId, '営業')
+          const t1 = getDefaultTime(shopId, '仕込み', date)
+          const t2 = getDefaultTime(shopId, '営業', date)
           rows.push({
             date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
             staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,

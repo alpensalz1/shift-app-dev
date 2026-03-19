@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import * as HolidayJP from '@holiday-jp/holiday_jp'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -55,6 +56,21 @@ export function calcWage(start: string, end: string | null, hourlyWage: number):
  * 6〜20日  → 翌月1日〜15日     （締め切り：当月20日）
  * 21〜末日 → 翌月16日〜末日    （締め切り：翌月5日）
  */
+/**
+ * 指定した日付が日本の祝日かどうかを判定
+ */
+export function isJapaneseHoliday(date: Date): boolean {
+  return HolidayJP.isHoliday(date)
+}
+
+/**
+ * 指定した日付が土曜・日曜・日本の祝日のいずれかかどうかを判定
+ */
+export function isWeekendOrHoliday(date: Date): boolean {
+  const dow = date.getDay()
+  return dow === 0 || dow === 6 || isJapaneseHoliday(date)
+}
+
 export function getSubmissionPeriod(today: Date): { start: Date; end: Date; deadline: Date } {
   const year = today.getFullYear()
   const month = today.getMonth()
