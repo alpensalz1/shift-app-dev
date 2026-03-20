@@ -449,11 +449,12 @@ function ShiftConfirmTab() {
         .eq('staff_id', req.staff_id)
         .eq('date', req.date)
       if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); return }
-      const { error: insErr } = await supabase.from('shifts_fixed').insert(
+      const { error: insErr } = await supabase.from('shifts_fixed').upsert(
         splits.map((s) => ({
           date: req.date, shop_id: shopId, type: s.type,
           staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
-        }))
+        })),
+        { onConflict: 'date,shop_id,type,staff_id' }
       )
       if (insErr) {
         setMessage('確定に失敗: ' + insErr.message)
