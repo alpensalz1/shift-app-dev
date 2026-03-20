@@ -83,20 +83,13 @@ export function getSubmissionPeriod(today: Date): { start: Date; end: Date; dead
       end: new Date(year, month + 1, 0),
       deadline: new Date(year, month, 5),
     }
-  } else if (day <= 20) {
-    // 翌月1日〜15日（締め切り：当月20日）
+    } else {
+    // 翌月前半（1〜15日）、締切：当月２０日
+    // 翌月１日以降は isPeriodLocked によりロックされる
     return {
       start: new Date(year, month + 1, 1),
       end: new Date(year, month + 1, 15),
       deadline: new Date(year, month, 20),
     }
-  } else {
-    // 翌月16日〜末日（締め切り：翌月5日）
-    return {
-      start: new Date(year, month + 1, 16),
-      end: new Date(year, month + 2, 0),
-      deadline: new Date(year, month + 1, 5),
-    }
   }
 }
-
