@@ -32,6 +32,7 @@ import {
   ChevronUp,
   ChevronDown,
   UserPlus,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -269,6 +270,11 @@ function ShiftConfirmTab() {
     if (!selectedDate) return []
     return configs.map((cfg) => {
       const filled = selectedFixed.filter((f) => f.shop_id === cfg.shop_id && f.type === cfg.type).length
+      const filledEmployees = selectedFixed.filter((f) =>
+        f.shop_id === cfg.shop_id &&
+        f.type === cfg.type &&
+        allStaffs.find((s) => s.id === f.staff_id)?.employment_type === '社員'
+      ).length
       return {
         shopId: cfg.shop_id,
         shopName: SHOP_NAMES[cfg.shop_id] || String(cfg.shop_id),
@@ -276,6 +282,7 @@ function ShiftConfirmTab() {
         required: cfg.required_count,
         filled,
         diff: filled - cfg.required_count,
+        filledEmployees,
       }
     })
   }, [selectedDate, selectedFixed, configs])
@@ -594,33 +601,54 @@ function ShiftConfirmTab() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {staffingStatus.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
-                {staffingStatus.map((s) => (
-                  <div key={`${s.shopId}-${s.type}`}
-                    className={`flex flex-col gap-1.5 p-2.5 rounded-lg border text-xs ${s.diff >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-[11px]">{s.shopName}</div>
-                        <span className={`px-1.5 py-0.5 rounded-full ${s.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{s.type}</span>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-base font-bold ${s.diff >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{s.filled}/{s.required}</div>
-                        <div className={`text-[10px] ${s.diff >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                          {s.diff > 0 ? `+${s.diff}名` : s.diff === 0 ? '充足' : `${s.diff}名不足`}
+                        {staffingStatus.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-0.5 mb-1">シフト状況</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {staffingStatus.map((s) => (
+                    <div
+                      key={`${s.shopId}-${s.type}`}
+                      className={`flex flex-col gap-2 p-3 rounded-xl border-2 text-xs ${
+                        s.filledEmployees === 0
+                          ? 'bg-orange-50 border-orange-300'
+                          : s.diff >= 0
+                          ? 'bg-emerald-50 border-emerald-200'
+                          : 'bg-red-50 border-red-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="font-bold text-[12px] text-gray-800">{s.shopName}</div>
+                          <span className={`inline-block w-fit px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                            s.type === '仕込み' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                          }`}>{s.type}</span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className={`text-base font-extrabold leading-none ${
+                            s.diff >= 0 ? 'text-emerald-600' : 'text-red-600'
+                          }`}>{s.filled}<span className="text-[11px] font-normal text-gray-400">/{s.required}</span></div>
+                          <div className={`text-[10px] mt-0.5 font-medium ${
+                            s.diff > 0 ? 'text-emerald-600' : s.diff === 0 ? 'text-emerald-600' : 'text-red-600'
+                          }`}>{s.diff > 0 ? `+${s.diff}名` : s.diff === 0 ? '充足' : `${s.diff}名不足`}</div>
                         </div>
                       </div>
-                    </div>
+                      {s.filledEmployees === 0 && (
+                        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-orange-100 border border-orange-300 rounded-lg text-orange-700 text-[11px] font-semibold">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          社員を追加してください
+                        </div>
+                      )}
                       <button
                         onClick={() => setAddStaffModal({ shopId: s.shopId, type: s.type as '仕込み' | '営業' })}
                         disabled={confirming}
-                        className="w-full flex items-center justify-center gap-1 h-7 rounded-md border border-red-300 bg-white text-red-600 text-[11px] font-medium hover:bg-red-50 transition-colors disabled:opacity-40"
+                        className="w-full flex items-center justify-center gap-1 h-7 rounded-md border border-dashed border-gray-400 text-gray-600 hover:bg-gray-50 transition-colors text-[11px] font-medium disabled:opacity-50"
                       >
                         <UserPlus className="h-3 w-3" />
                         社員を追加
                       </button>
-                  </div>
-                ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
