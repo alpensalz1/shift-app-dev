@@ -249,6 +249,14 @@ function PartTimerForm({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [loadingExisting, setLoadingExisting] = useState(true)
+
+  const isPeriodLocked = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const s = new Date(periodStart)
+    s.setHours(0, 0, 0, 0)
+    return now >= s
+  }, [periodStart])
   const [existingRequests, setExistingRequests] = useState<ShiftRequest[]>([])
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
   const [viewMode, setViewMode] = useState<'form' | 'status'>('form')
@@ -409,6 +417,14 @@ function PartTimerForm({
 
   const firstDow = getDay(days[0])
   const selectedCount = Object.keys(dayTimeMap).length
+
+  const isPeriodLocked = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const s = new Date(periodStart)
+    s.setHours(0, 0, 0, 0)
+    return now >= s
+  }, [periodStart])
   const timeError = currentStart && currentEnd && currentStart >= currentEnd
     ? '終了は開始より後にしてください' : ''
   const canSubmit = selectedCount > 0 && currentStart < currentEnd
@@ -573,10 +589,12 @@ function PartTimerForm({
       <Button
         className="w-full h-12 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold shadow-sm disabled:opacity-40"
         onClick={handleSubmit}
-        disabled={submitting || !canSubmit}
+        disabled={submitting || !canSubmit || isPeriodLocked}
       >
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
+        ) : isPeriodLocked ? (
+          '提出期限が終了しました'
         ) : selectedCount === 0 ? (
           '出勤希望日を選択してください'
         ) : timeError ? (
@@ -846,10 +864,12 @@ function FullTimeForm({
       <Button
         className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-sm active:scale-[0.98]"
         onClick={handleSubmit}
-        disabled={submitting}
+        disabled={submitting || isPeriodLocked}
       >
         {submitting ? (
           <Loader2 className="h-4 w-4 animate-spin" />
+        ) : isPeriodLocked ? (
+          '提出期限が終了しました'
         ) : (
           <>
             <Send className="h-4 w-4 mr-2" />
