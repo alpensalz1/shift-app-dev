@@ -418,13 +418,6 @@ function PartTimerForm({
   const firstDow = getDay(days[0])
   const selectedCount = Object.keys(dayTimeMap).length
 
-  const isPeriodLocked = useMemo(() => {
-    const now = new Date()
-    now.setHours(0, 0, 0, 0)
-    const s = new Date(periodStart)
-    s.setHours(0, 0, 0, 0)
-    return now >= s
-  }, [periodStart])
   const timeError = currentStart && currentEnd && currentStart >= currentEnd
     ? '終了は開始より後にしてください' : ''
   const canSubmit = selectedCount > 0 && currentStart < currentEnd
@@ -631,6 +624,13 @@ function FullTimeForm({
   const [done, setDone] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [loadingExisting, setLoadingExisting] = useState(true)
+  const isPeriodLocked = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const s = new Date(periodStart)
+    s.setHours(0, 0, 0, 0)
+    return now >= s
+  }, [periodStart])
 
   const days = useMemo(
     () => eachDayOfInterval({ start: periodStart, end: periodEnd }),
