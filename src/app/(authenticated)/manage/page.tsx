@@ -611,7 +611,6 @@ function ShiftConfirmTab() {
                         </div>
                       </div>
                     </div>
-                    {s.diff < 0 && (
                       <button
                         onClick={() => setAddStaffModal({ shopId: s.shopId, type: s.type as '仕込み' | '営業' })}
                         disabled={confirming}
@@ -620,7 +619,6 @@ function ShiftConfirmTab() {
                         <UserPlus className="h-3 w-3" />
                         社員を追加
                       </button>
-                    )}
                   </div>
                 ))}
               </div>
