@@ -443,18 +443,18 @@ function ShiftConfirmTab() {
     const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
     const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
     try {
-      // この日のスタッフの既存確定をすべて削除してからinsert
-      const { error: delErr } = await supabase.from('shifts_fixed')
+      // このスロットの既存確定を削除してからupsert（DELETEはベストエフォート）
+      await supabase.from('shifts_fixed')
         .delete()
-        .eq('staff_id', req.staff_id)
+        .eq('shop_id', shopId)
         .eq('date', req.date)
-      if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); return }
+        .in('type', splits.map(s => s.type))
       const { error: insErr } = await supabase.from('shifts_fixed').upsert(
         splits.map((s) => ({
           date: req.date, shop_id: shopId, type: s.type,
           staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
         })),
-        { onConflict: 'date,shop_id,type,staff_id' }
+        { onConflict: 'date,shop_id,type' }
       )
       if (insErr) {
         setMessage('確定に失敗: ' + insErr.message)
