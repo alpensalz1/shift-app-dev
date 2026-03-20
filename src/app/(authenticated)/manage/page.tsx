@@ -449,23 +449,21 @@ function ShiftConfirmTab() {
         .eq('staff_id', req.staff_id)
         .eq('date', req.date)
       if (delErr) { setMessage('確定に失敗（削除エラー）: ' + delErr.message); return }
-      const results = await Promise.all(
-        splits.map((s) =>
-          supabase.from('shifts_fixed').insert(
-            { date: req.date, shop_id: shopId, type: s.type, staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time }
-          )
-        )
+      const { error: insErr } = await supabase.from('shifts_fixed').insert(
+        splits.map((s) => ({
+          date: req.date, shop_id: shopId, type: s.type,
+          staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
+        }))
       )
-      const errResult = results.find((r) => r.error)
-      if (errResult?.error) {
-        setMessage('確定に失敗: ' + errResult.error.message)
-        fetchAll() // 削除後にinsertが失敗した場合でもUIを最新状態に更新
+      if (insErr) {
+        setMessage('確定に失敗: ' + insErr.message)
+        fetchAll()
       } else {
         const typesStr = splits.map((s) => s.type).join('・')
         setMessage(`${req.staffs.name}のシフトを自動分割確定しました（${SHOP_NAMES[shopId]} / ${typesStr}）`)
         fetchAll()
       }
-    } finally {
+      } finally {
       setConfirming(false)
     }
   }
