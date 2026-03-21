@@ -258,7 +258,7 @@ function ShiftConfirmTab() {
       const filledEmployees = selectedFixed.filter((f) =>
         f.shop_id === cfg.shop_id &&
         f.type === cfg.type &&
-        allStaffs.find((s) => s.id === f.staff_id)?.employment_type === '社員'
+        ['社員', '役員'].includes(allStaffs.find((s) => s.id === f.staff_id)?.employment_type ?? '')
       ).length
       return {
         shopId: cfg.shop_id,
