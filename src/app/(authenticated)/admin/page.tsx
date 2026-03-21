@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
@@ -8,7 +8,7 @@ import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { calcWage, calcHours, getSubmissionPeriod } from '@/lib/utils'
-import { format } from 'date-fns'
+import { format, addDays, endOfMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
@@ -1001,10 +1001,44 @@ function SubmissionStatusTab() {
   const [submittedFullIds, setSubmittedFullIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  // 0=現在の対象期間、負の値=過去へ
+  const [periodOffset, setPeriodOffset] = useState(0)
 
-  const period = getSubmissionPeriod(new Date())
-  const periodStart = format(period.start, 'yyyy-MM-dd')
-  const periodEnd = format(period.end, 'yyyy-MM-dd')
+  // 選択期間を計算（getSubmissionPeriod の基準からオフセット分ずらす）
+  const selectedPeriod = useMemo(() => {
+    const base = getSubmissionPeriod(new Date())
+    let start = new Date(base.start)
+    let end = new Date(base.end)
+    for (let i = 0; i < Math.abs(periodOffset); i++) {
+      if (periodOffset < 0) {
+        const prevEnd = addDays(start, -1)
+        end = prevEnd
+        start = prevEnd.getDate() > 15
+          ? new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 16)
+          : new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 1)
+      } else {
+        const nextStart = addDays(end, 1)
+        start = nextStart
+        end = nextStart.getDate() === 1
+          ? new Date(nextStart.getFullYear(), nextStart.getMonth(), 15)
+          : endOfMonth(nextStart)
+      }
+    }
+    const isFirstHalf = start.getDate() <= 15
+    const m = start.getMonth() + 1
+    const y = start.getFullYear()
+    const deadline = isFirstHalf
+      ? new Date(start.getFullYear(), start.getMonth() - 1, 20)
+      : new Date(start.getFullYear(), start.getMonth(), 5)
+    return {
+      start, end, deadline,
+      label: `${y}年${m}月${isFirstHalf ? '前半' : '後半'}`,
+      isCurrent: periodOffset === 0,
+    }
+  }, [periodOffset])
+
+  const periodStart = format(selectedPeriod.start, 'yyyy-MM-dd')
+  const periodEnd   = format(selectedPeriod.end,   'yyyy-MM-dd')
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -1023,124 +1057,143 @@ function SubmissionStatusTab() {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-12">
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </div>
-  )
-
   const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
   const fullTimers = staffs.filter(s => s.employment_type === '社員' || s.employment_type === '役員')
-  const partSubmitted = partTimers.filter(s => submittedPartIds.has(s.id))
+  const partSubmitted    = partTimers.filter(s =>  submittedPartIds.has(s.id))
   const partNotSubmitted = partTimers.filter(s => !submittedPartIds.has(s.id))
 
   return (
     <div className="space-y-4">
-      {/* 対象期間バナー */}
-      <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 py-3">
-        <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider mb-0.5">次回シフト対象期間</p>
-        <p className="text-sm font-bold text-indigo-900">
-          {format(period.start, 'M月d日（E）', { locale: ja })} 〜 {format(period.end, 'M月d日（E）', { locale: ja })}
-        </p>
-        <p className="text-xs text-indigo-600 mt-0.5">
-          締切：{format(period.deadline, 'M月d日（E）', { locale: ja })}
-        </p>
-      </div>
-
-      {/* アルバイト */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-0.5">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">アルバイト</h3>
-          <span className="text-xs font-semibold text-muted-foreground">
-            {partSubmitted.length} / {partTimers.length} 名 提出済み
-          </span>
-        </div>
-
-        {partNotSubmitted.length > 0 && (
-          <div>
-            <p className="text-[10px] text-red-500 font-semibold mb-1 px-0.5">未提出</p>
-            <div className="rounded-xl bg-red-50 border border-red-200 divide-y divide-red-100 overflow-hidden">
-              {partNotSubmitted.map(s => (
-                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-sm font-medium">{s.name}</span>
-                  <span className="flex items-center gap-1 text-xs font-semibold text-red-600">
-                    <XCircle className="h-3.5 w-3.5" />
-                    未提出
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {partSubmitted.length > 0 && (
-          <div>
-            <p className="text-[10px] text-emerald-600 font-semibold mb-1 px-0.5">提出済み</p>
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 divide-y divide-emerald-100 overflow-hidden">
-              {partSubmitted.map(s => (
-                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
-                  <span className="text-sm font-medium">{s.name}</span>
-                  <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    提出済み
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {partTimers.length === 0 && (
-          <p className="text-xs text-muted-foreground px-0.5">アルバイトスタッフがいません</p>
-        )}
-      </div>
-
-      {/* 社員・役員 */}
-      {fullTimers.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between px-0.5">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">社員・役員</h3>
-          </div>
-          <div className="rounded-xl border bg-white divide-y overflow-hidden">
-            {fullTimers.map(s => {
-              const hasChange = submittedFullIds.has(s.id)
-              return (
-                <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{s.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${s.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
-                      {s.employment_type}
-                    </span>
-                  </div>
-                  {hasChange
-                    ? <span className="flex items-center gap-1 text-xs font-semibold text-amber-600">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        変更申請あり
-                      </span>
-                    : <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                        <CheckCircle className="h-3.5 w-3.5" />
-                        フル出勤
-                      </span>
-                  }
-                </div>
-              )
-            })}
-          </div>
-          <p className="text-[10px] text-muted-foreground px-0.5">
-            ※ 社員・役員は変更なし＝フル出勤のため、提出有無は判別できません
+      {/* 期間ナビゲーター */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setPeriodOffset(o => o - 1)}
+          className="p-2 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className={`flex-1 rounded-2xl px-4 py-3 border ${selectedPeriod.isCurrent ? 'bg-indigo-50 border-indigo-200' : 'bg-muted/30 border-border'}`}>
+          <p className={`text-[10px] font-semibold uppercase tracking-wider mb-0.5 ${selectedPeriod.isCurrent ? 'text-indigo-500' : 'text-muted-foreground'}`}>
+            {selectedPeriod.isCurrent ? '次回シフト対象期間' : 'シフト対象期間'}
+          </p>
+          <p className={`text-sm font-bold ${selectedPeriod.isCurrent ? 'text-indigo-900' : 'text-foreground'}`}>
+            {format(selectedPeriod.start, 'M月d日（E）', { locale: ja })} 〜 {format(selectedPeriod.end, 'M月d日（E）', { locale: ja })}
+          </p>
+          <p className={`text-xs mt-0.5 ${selectedPeriod.isCurrent ? 'text-indigo-600' : 'text-muted-foreground'}`}>
+            締切：{format(selectedPeriod.deadline, 'M月d日（E）', { locale: ja })}
           </p>
         </div>
+        <button
+          onClick={() => setPeriodOffset(o => Math.min(0, o + 1))}
+          disabled={selectedPeriod.isCurrent}
+          className="p-2 rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          {/* アルバイト */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-0.5">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">アルバイト</h3>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {partSubmitted.length} / {partTimers.length} 名 提出済み
+              </span>
+            </div>
+
+            {partNotSubmitted.length > 0 && (
+              <div>
+                <p className="text-[10px] text-red-500 font-semibold mb-1 px-0.5">未提出</p>
+                <div className="rounded-xl bg-red-50 border border-red-200 divide-y divide-red-100 overflow-hidden">
+                  {partNotSubmitted.map(s => (
+                    <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-sm font-medium">{s.name}</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                        <XCircle className="h-3.5 w-3.5" />
+                        未提出
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {partSubmitted.length > 0 && (
+              <div>
+                <p className="text-[10px] text-emerald-600 font-semibold mb-1 px-0.5">提出済み</p>
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 divide-y divide-emerald-100 overflow-hidden">
+                  {partSubmitted.map(s => (
+                    <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-sm font-medium">{s.name}</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        提出済み
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {partTimers.length === 0 && (
+              <p className="text-xs text-muted-foreground px-0.5">アルバイトスタッフがいません</p>
+            )}
+          </div>
+
+          {/* 社員・役員 */}
+          {fullTimers.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider px-0.5">社員・役員</h3>
+              <div className="rounded-xl border bg-white divide-y overflow-hidden">
+                {fullTimers.map(s => {
+                  const hasChange = submittedFullIds.has(s.id)
+                  return (
+                    <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{s.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${s.employment_type === '役員' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'}`}>
+                          {s.employment_type}
+                        </span>
+                      </div>
+                      {hasChange
+                        ? <span className="flex items-center gap-1 text-xs font-semibold text-amber-600">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            変更申請あり
+                          </span>
+                        : <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            フル出勤
+                          </span>
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground px-0.5">
+                ※ 社員・役員は変更なし＝フル出勤のため、提出有無は判別できません
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {/* 更新ボタン */}
-      <button
-        onClick={() => load(true)}
-        disabled={refreshing}
-        className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-        更新
-      </button>
+      {!loading && (
+        <button
+          onClick={() => load(true)}
+          disabled={refreshing}
+          className="w-full flex items-center justify-center gap-2 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          更新
+        </button>
+      )}
     </div>
   )
 }
