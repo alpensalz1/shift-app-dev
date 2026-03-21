@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest } from '@/types/database'
+import { ShiftRequest, ShiftFixed, Staff, ShiftConfig, ShiftRule, OffRequest, Shop } from '@/types/database'
 import { formatTime, getSubmissionPeriod, isJapaneseHoliday, isWeekendOrHoliday } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1449,6 +1449,13 @@ function AutoGenerateTab() {
 const MIN_OFF_DAYS = 5
 
 
+// Shop color palette (index-based fallback if shop.color is not set)
+const SHOP_BG = ['bg-indigo-500', 'bg-teal-500', 'bg-violet-500', 'bg-rose-500']
+const SHOP_BG_HOVER = ['hover:bg-indigo-600', 'hover:bg-teal-600', 'hover:bg-violet-600', 'hover:bg-rose-600']
+const SHOP_LIMIT_BG = ['bg-indigo-100', 'bg-teal-100', 'bg-violet-100', 'bg-rose-100']
+const SHOP_LIMIT_TEXT = ['text-indigo-700', 'text-teal-700', 'text-violet-700', 'text-rose-700']
+const SHOP_LIMIT_BORDER = ['border-indigo-300', 'border-teal-300', 'border-violet-300', 'border-rose-300']
+
 function ShiftAdjustTab() {
   const today = useMemo(() => new Date(), [])
   // Default to the next half-month period that needs adjustment
@@ -1472,12 +1479,15 @@ function ShiftAdjustTab() {
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
   const [fullTimeStaffs, setFullTimeStaffs] = useState<Staff[]>([])
+  const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msgText, setMsgText] = useState('')
   const [msgType, setMsgType] = useState<'ok' | 'warn' | 'err'>('ok')
   // admin-assigned off days: staffId -> Set<'yyyy-MM-dd'>
   const [assignedOff, setAssignedOff] = useState<Record<number, Set<string>>>({})
+  // per-cell shop overrides: staffId -> date -> shopId (only when different from staff.shop_id)
+  const [cellShops, setCellShops] = useState<Record<number, Record<string, number>>>({})
 
   const periodDays = useMemo(() => {
     const start = new Date(selectedYear, selectedMonth, isFirstHalf ? 1 : 16)
@@ -1492,7 +1502,7 @@ function ShiftAdjustTab() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [staffRes, offRes, fixedRes, configRes] = await Promise.all([
+    const [staffRes, offRes, fixedRes, configRes, shopsRes] = await Promise.all([
       supabase.from('staffs').select('*')
         .eq('is_active', true)
         .is('deleted_at', null)
@@ -1504,21 +1514,24 @@ function ShiftAdjustTab() {
         .gte('date', periodStart)
         .lte('date', periodEnd),
       supabase.from('shift_config').select('*'),
+      supabase.from('shops').select('*').eq('is_active', true),
     ])
     const staffs = (staffRes.data || []).filter((s: Staff) => s.name !== 'いっさ')
     setFullTimeStaffs(staffs)
     setOffRequests(offRes.data || [])
     setFixedShifts(fixedRes.data || [])
     setConfigs(configRes.data || [])
+    setShops(shopsRes.data || [])
     setLoading(false)
   }, [periodStart, periodEnd])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Reconstruct assignedOff from existing shifts_fixed when data loads
+  // Reconstruct assignedOff and cellShops from existing shifts_fixed when data loads
   useEffect(() => {
     if (loading) return
     const newAsgn: Record<number, Set<string>> = {}
+    const newCellShops: Record<number, Record<string, number>> = {}
     for (const staff of fullTimeStaffs) {
       const staffFixed = fixedShifts.filter(f => f.staff_id === staff.id)
       if (staffFixed.length === 0) continue // not saved yet → all default to work
@@ -1526,14 +1539,22 @@ function ShiftAdjustTab() {
       const reqOffDates = new Set(
         offRequests.filter(r => r.staff_id === staff.id && r.type === '休み').map(r => r.date)
       )
+      // Reconstruct assigned-off days
       const asgnSet = new Set<string>()
       for (const day of periodDays) {
         const ds = format(day, 'yyyy-MM-dd')
         if (!fixedDates.has(ds) && !reqOffDates.has(ds)) asgnSet.add(ds)
       }
       if (asgnSet.size > 0) newAsgn[staff.id] = asgnSet
+      // Reconstruct per-cell shop from first fixed shift per date
+      const shopMap: Record<string, number> = {}
+      for (const fix of staffFixed) {
+        if (!shopMap[fix.date]) shopMap[fix.date] = fix.shop_id
+      }
+      if (Object.keys(shopMap).length > 0) newCellShops[staff.id] = shopMap
     }
     setAssignedOff(newAsgn)
+    setCellShops(newCellShops)
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Navigate month
@@ -1557,21 +1578,80 @@ function ShiftAdjustTab() {
     return req.type === '休み' ? 'req-off' : 'limited'
   }
 
+  // Returns the shop_id for a given cell (falls back to staff's default)
+  const getCellShopId = (staffId: number, ds: string, defaultShopId: number): number =>
+    cellShops[staffId]?.[ds] ?? defaultShopId
+
+  // Returns shop index in the active shops array (for color/label picking)
+  const getShopIdx = (shopId: number): number => {
+    const idx = shops.findIndex(sh => sh.id === shopId)
+    return idx >= 0 ? idx : 0
+  }
+
   const showMsg = (text: string, type: 'ok' | 'warn' | 'err' = 'ok') => {
     setMsgText(text); setMsgType(type)
     setTimeout(() => setMsgText(''), 3000)
   }
 
-  const handleCellClick = (staffId: number, ds: string) => {
+  const handleCellClick = (staffId: number, ds: string, defaultShopId: number) => {
     const state = getCellState(staffId, ds)
     if (state === 'req-off') {
       showMsg('希望休は変更できません', 'warn'); return
     }
-    setAssignedOff(prev => {
-      const s = new Set(prev[staffId] || [])
-      state === 'asgn-off' ? s.delete(ds) : s.add(ds)
-      return { ...prev, [staffId]: s }
-    })
+
+    if (state === 'asgn-off') {
+      // Off → revert to work at default shop
+      setAssignedOff(prev => {
+        const s = new Set(prev[staffId] || [])
+        s.delete(ds)
+        return { ...prev, [staffId]: s }
+      })
+      setCellShops(prev => {
+        const m = { ...(prev[staffId] || {}) }
+        delete m[ds]
+        return { ...prev, [staffId]: m }
+      })
+      return
+    }
+
+    // work or limited → cycle shops (and eventually to asgn-off for work cells)
+    const activeShops = shops.filter(sh => sh.is_active !== false)
+    if (activeShops.length < 2) {
+      // Only 1 shop → original toggle (work↔off) for work cells
+      if (state === 'work') {
+        setAssignedOff(prev => {
+          const s = new Set(prev[staffId] || [])
+          s.add(ds)
+          return { ...prev, [staffId]: s }
+        })
+      }
+      return
+    }
+
+    const currentShopId = getCellShopId(staffId, ds, defaultShopId)
+    const currentIdx = activeShops.findIndex(sh => sh.id === currentShopId)
+    const nextIdx = (currentIdx + 1) % activeShops.length
+    const nextShop = activeShops[nextIdx]
+
+    if (state === 'work' && nextIdx === 0 && currentIdx !== 0) {
+      // Completed full cycle of all shops → go to asgn-off
+      setAssignedOff(prev => {
+        const s = new Set(prev[staffId] || [])
+        s.add(ds)
+        return { ...prev, [staffId]: s }
+      })
+      setCellShops(prev => {
+        const m = { ...(prev[staffId] || {}) }
+        delete m[ds]
+        return { ...prev, [staffId]: m }
+      })
+    } else {
+      // Advance to next shop
+      setCellShops(prev => ({
+        ...prev,
+        [staffId]: { ...(prev[staffId] || {}), [ds]: nextShop.id }
+      }))
+    }
   }
 
   const getOffCount = (staffId: number) => {
@@ -1598,8 +1678,6 @@ function ShiftAdjustTab() {
         .gte('date', periodStart)
         .lte('date', periodEnd)
 
-      const shimeCfg = configs.find(c => c.type === '仕込み')
-      const eigCfg = configs.find(c => c.type === '営業')
       const toInsert: Omit<ShiftFixed, 'id' | 'created_at'>[] = []
 
       for (const staff of fullTimeStaffs) {
@@ -1608,20 +1686,27 @@ function ShiftAdjustTab() {
           const state = getCellState(staff.id, ds)
           if (state === 'req-off' || state === 'asgn-off') continue
 
+          // Use per-cell shop if set, otherwise fall back to staff's default
+          const shopId = getCellShopId(staff.id, ds, staff.shop_id)
+          const shimeCfg = configs.find(c => c.shop_id === shopId && c.type === '仕込み')
+            ?? configs.find(c => c.type === '仕込み')
+          const eigCfg = configs.find(c => c.shop_id === shopId && c.type === '営業')
+            ?? configs.find(c => c.type === '営業')
+
           const offReq = getOffReq(staff.id, ds)
           const isShimeOnly = offReq?.type === '仕込みのみ'
           const isEigOnly = offReq?.type === '営業のみ'
 
           if (!isEigOnly) {
             toInsert.push({
-              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: '仕込み',
+              date: ds, shop_id: shopId, staff_id: staff.id, type: '仕込み',
               start_time: shimeCfg?.default_start_time ?? '14:00:00',
               end_time: shimeCfg?.default_end_time ?? '17:00:00',
             })
           }
           if (!isShimeOnly) {
             toInsert.push({
-              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: '営業',
+              date: ds, shop_id: shopId, staff_id: staff.id, type: '営業',
               start_time: eigCfg?.default_start_time ?? '17:00:00',
               end_time: eigCfg?.default_end_time ?? '24:00:00',
             })
@@ -1646,6 +1731,7 @@ function ShiftAdjustTab() {
   const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
   const periodLabel = `${selectedMonth + 1}月${isFirstHalf ? '前半' : '後半'}`
   const okCount = fullTimeStaffs.filter(s => getNeedOff(s.id) === 0).length
+  const activeShops = shops.filter(sh => sh.is_active !== false)
 
   return (
     <div className="space-y-3">
@@ -1662,7 +1748,7 @@ function ShiftAdjustTab() {
       <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 leading-relaxed">
         <span className="font-bold">ルール：</span>
         社員・役員は半月につき最低 <span className="font-bold">5日の休み</span> が必要です。
-        🌸希望休は変更不可。水色の割り当て休は出勤日をクリックして追加できます。
+        🌸希望休は変更不可。出勤セルは <span className="font-bold">タップで店舗切替</span>（全店舗を一周すると休みに）。
       </div>
 
       {/* Period selector */}
@@ -1691,9 +1777,16 @@ function ShiftAdjustTab() {
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-indigo-500" /><span>出勤（クリック→割り当て休）</span></div>
+        {activeShops.map((shop, i) => (
+          <div key={shop.id} className="flex items-center gap-1">
+            <div className={`w-4 h-4 rounded ${SHOP_BG[i % SHOP_BG.length]} flex items-center justify-center`}>
+              <span className="text-white font-bold" style={{ fontSize: 8 }}>{shop.name.slice(0, 2)}</span>
+            </div>
+            <span>出勤（{shop.name}）</span>
+          </div>
+        ))}
         <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-pink-100 border border-pink-300" /><span>希望休・本人申請（変更不可）</span></div>
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>割り当て休（クリック→出勤に戻す）</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>割り当て休</span></div>
         <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" /><span>限定出勤（仕込/営業のみ）</span></div>
       </div>
 
@@ -1751,16 +1844,21 @@ function ShiftAdjustTab() {
                       const ds = format(day, 'yyyy-MM-dd')
                       const state = getCellState(staff.id, ds)
                       const offReq = getOffReq(staff.id, ds)
+                      const shopId = getCellShopId(staff.id, ds, staff.shop_id)
+                      const shopIdx = getShopIdx(shopId)
+                      const shop = activeShops[shopIdx]
+                      const shopAbbr = shop ? shop.name.slice(0, 2) : '出'
+
                       let bg = '', label = ''
                       switch (state) {
                         case 'work':
-                          bg = 'bg-indigo-500 hover:bg-indigo-600 text-white cursor-pointer'
-                          label = '出'; break
+                          bg = `${SHOP_BG[shopIdx % SHOP_BG.length]} ${SHOP_BG_HOVER[shopIdx % SHOP_BG_HOVER.length]} text-white cursor-pointer`
+                          label = shopAbbr; break
                         case 'req-off':
                           bg = 'bg-pink-100 text-pink-700 border border-pink-300 cursor-not-allowed'
                           label = '休'; break
                         case 'limited':
-                          bg = 'bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 cursor-pointer'
+                          bg = `${SHOP_LIMIT_BG[shopIdx % SHOP_LIMIT_BG.length]} ${SHOP_LIMIT_TEXT[shopIdx % SHOP_LIMIT_TEXT.length]} border ${SHOP_LIMIT_BORDER[shopIdx % SHOP_LIMIT_BORDER.length]} hover:opacity-80 cursor-pointer`
                           label = offReq?.type === '仕込みのみ' ? '仕' : '営'; break
                         case 'asgn-off':
                           bg = 'bg-sky-50 text-sky-600 border border-dashed border-sky-300 hover:bg-sky-100 cursor-pointer'
@@ -1770,21 +1868,23 @@ function ShiftAdjustTab() {
                         <div
                           key={ds}
                           style={{ width: 34, height: 34, flexShrink: 0, position: 'relative' }}
-                          className={`rounded-lg flex items-center justify-center text-[11px] font-bold select-none transition-colors ${bg}`}
-                          onClick={() => handleCellClick(staff.id, ds)}
+                          className={`rounded-lg flex flex-col items-center justify-center select-none transition-colors ${bg}`}
+                          onClick={() => handleCellClick(staff.id, ds, staff.shop_id)}
                           title={`${format(day, 'M/d')} ${DAY_NAMES[getDay(day)]}｜${
-                            state === 'work' ? '出勤 → クリックで割り当て休' :
+                            state === 'work' ? `${shop?.name ?? ''}出勤 → タップで店舗切替` :
                             state === 'req-off' ? '🌸 希望休（変更不可）' :
-                            state === 'limited' ? `限定出勤（${offReq?.type}）` :
-                            '割り当て休 → クリックで出勤に戻す'
+                            state === 'limited' ? `限定出勤（${offReq?.type}）@ ${shop?.name ?? ''}` :
+                            '割り当て休 → タップで出勤に戻す'
                           }`}
                         >
                           {state === 'req-off' ? (
                             <>
-                              {label}
+                              <span className="text-[11px] font-bold">{label}</span>
                               <div style={{ position: 'absolute', top: 2, right: 2, width: 5, height: 5, borderRadius: '50%', background: '#ec4899' }} />
                             </>
-                          ) : label}
+                          ) : (
+                            <span className="text-[10px] font-bold leading-none">{label}</span>
+                          )}
                         </div>
                       )
                     })}
@@ -1837,6 +1937,8 @@ function ShiftAdjustTab() {
 // =============================================
 // メインページ
 // =============================================
+
+type ManageTab = 'confirm' | 'rules' | 'auto' | 'adjust'
 
 export default function ManagePage() {
   const router = useRouter()
