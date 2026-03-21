@@ -1321,11 +1321,11 @@ function ShiftAdjustTab() {
           const state = getCellState(staff.id, ds)
           if (state === 'req-off' || state === 'asgn-off') continue
 
-          // 作業日: 店舗なし・単一レコード
+          // 作業日: 店舗なし・単一レコード（14:00〜24:00）
           if (state === 'work-task') {
             toInsert.push({
               date: ds, shop_id: null, staff_id: staff.id, type: '作業日',
-              start_time: '10:00:00', end_time: null,
+              start_time: '14:00:00', end_time: '24:00:00',
             })
             continue
           }

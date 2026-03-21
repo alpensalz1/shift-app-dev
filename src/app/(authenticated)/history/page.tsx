@@ -195,11 +195,16 @@ export default function HistoryPage() {
                   const dow = getDay(d)
                   const hasPrep = dayShifts?.some((s) => s.type === '仕込み')
                   const hasService = dayShifts?.some((s) => s.type === '営業')
+                  const hasTask = dayShifts?.some((s) => s.type === '作業日')
                   const bgColor = hasShift
                     ? hasPrep && hasService
                       ? 'bg-indigo-500'
                       : hasPrep
                       ? 'bg-amber-500'
+                      : hasService
+                      ? 'bg-blue-500'
+                      : hasTask
+                      ? 'bg-purple-500'
                       : 'bg-blue-500'
                     : ''
                   return (
@@ -253,6 +258,10 @@ export default function HistoryPage() {
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-indigo-500 inline-block" />
               両方
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-purple-500 inline-block" />
+              作業日
             </span>
           </div>
 
@@ -326,6 +335,8 @@ export default function HistoryPage() {
                                   className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
                                     s.type === '仕込み'
                                       ? 'bg-amber-100 text-amber-700'
+                                      : s.type === '作業日'
+                                      ? 'bg-purple-100 text-purple-700'
                                       : 'bg-blue-100 text-blue-700'
                                   }`}
                                 >
