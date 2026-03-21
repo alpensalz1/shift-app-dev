@@ -75,7 +75,7 @@ export default function HistoryPage() {
   })
   const firstDow = getDay(daysInMonth[0])
 
-  // Group shifts by date
+  // Group shifts by date, sorted by start_time within each day
   const shiftsByDate = useMemo(() => {
     const map: Record<string, ShiftFixed[]> = {}
     shifts.forEach((s) => {
@@ -83,6 +83,10 @@ export default function HistoryPage() {
       if (!map[dk]) map[dk] = []
       map[dk].push(s)
     })
+    // 同日内を start_time 昇順で並び替え（仕込み→営業の正しい順序）
+    Object.values(map).forEach((arr) =>
+      arr.sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+    )
     return map
   }, [shifts])
 
@@ -338,14 +342,12 @@ export default function HistoryPage() {
                           </div>
 
                           {/* 合計時間（右端） */}
-                          {dayShifts.length > 1 && (
-                            <div className="text-right shrink-0">
-                              <p className="text-sm font-bold text-foreground tabular-nums">
-                                {totalDayHours}h
-                              </p>
-                              <p className="text-[10px] text-muted-foreground">計</p>
-                            </div>
-                          )}
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-bold text-foreground tabular-nums">
+                              {totalDayHours}h
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">計</p>
+                          </div>
                         </div>
                       </div>
                     )
