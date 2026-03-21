@@ -28,7 +28,6 @@ import {
   Loader2,
   Users,
   Settings,
-  Wand2,
   ChevronUp,
   ChevronDown,
   UserPlus,
@@ -41,22 +40,6 @@ interface RequestWithStaff extends ShiftRequest {
   staffs: Pick<Staff, 'name' | 'employment_type'>
 }
 
-interface RuleWithStaff extends ShiftRule {
-  staffs: Pick<Staff, 'name'>
-}
-
-// 自動生成プレビュー行
-interface GeneratedRow {
-  date: string
-  shop_id: number
-  shop_name: string
-  staff_id: number
-  staff_name: string
-  type: '仕込み' | '営業'
-  start_time: string
-  end_time: string
-  note: string
-}
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
@@ -967,7 +950,7 @@ function RulesTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        社員ごとに配属店舗を設定します。配属先に設定された店舗にしか自動生成で割り当てられません。未設定の社員は補填候補として扱われます。
+        社員ごとの配属店舗を設定します。ここで設定した配属先が、シフト調整画面でのデフォルト出勤店舗として反映されます。
       </p>
 
       {/* 配属先サマリー */}
@@ -1027,421 +1010,9 @@ function RulesTab() {
 }
 
 // =============================================
-// タブ3: 自動生成
+// (削除: 自動生成タブ)
 // =============================================
 
-/**
- * 指定した日付を「含む」前半/後半の期間を返す
- * 1〜15日 → 当月1〜15日
- * 16〜末日 → 当月16日〜末日
- * ※ getSubmissionPeriod は「次の提出締め切り期間」を返すため
- *   ナビゲーション用途には使えない
- */
-function getPeriodContaining(date: Date): { start: Date; end: Date; deadline: Date } {
-  const year = date.getFullYear()
-  const month = date.getMonth()
-  const day = date.getDate()
-  if (day <= 15) {
-    return {
-      start: new Date(year, month, 1),
-      end: new Date(year, month, 15),
-      deadline: new Date(year, month - 1, 20),
-    }
-  } else {
-    return {
-      start: new Date(year, month, 16),
-      end: new Date(year, month + 1, 0),
-      deadline: new Date(year, month, 5),
-    }
-  }
-}
-
-function AutoGenerateTab() {
-  const today = new Date()
-
-  // 対象期間（前半/後半の選択）
-  const [periodOffset, setPeriodOffset] = useState(0) // 0=今期, 1=次期, -1=前期
-  const basePeriod = getSubmissionPeriod(today)
-  // periodOffsetに応じてずらす（前半↔後半を正確に1ステップずつ移動）
-  const period = useMemo(() => {
-    if (periodOffset === 0) return basePeriod
-    let p = basePeriod
-    const steps = Math.abs(periodOffset)
-    for (let i = 0; i < steps; i++) {
-      if (periodOffset > 0) {
-        p = getPeriodContaining(addDays(p.end, 1))
-      } else {
-        p = getPeriodContaining(addDays(p.start, -1))
-      }
-    }
-    return p
-  }, [periodOffset, basePeriod.start.toISOString(), basePeriod.end.toISOString()])
-
-  const [rules, setRules] = useState<RuleWithStaff[]>([])
-  const [offRequests, setOffRequests] = useState<OffRequest[]>([])
-  const [allStaffs, setAllStaffs] = useState<Staff[]>([])
-  const [allExecutives, setAllExecutives] = useState<Staff[]>([])
-  const [configs, setConfigs] = useState<ShiftConfig[]>([])
-  const [closedDatesAuto, setClosedDatesAuto] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [preview, setPreview] = useState<GeneratedRow[] | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
-  // 期間切替時のfetch競合を防ぐためのバージョン管理（古い期間のfetchが新しい期間のデータを上書きしないよう）
-  const fetchVersionRef = useRef(0)
-
-  const fetchData = useCallback(async () => {
-    const version = ++fetchVersionRef.current
-    setLoading(true)
-    const periodStart = format(period.start, 'yyyy-MM-dd')
-    const periodEnd = format(period.end, 'yyyy-MM-dd')
-    const [rulesRes, offRes, staffsRes, execRes, configRes, closedRes] = await Promise.all([
-      supabase.from('shift_rules').select('*, staffs(name)').eq('is_active', true).order('shop_id').order('priority'),
-      supabase.from('off_requests').select('*').gte('date', periodStart).lte('date', periodEnd),
-      supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
-      supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '役員'),
-      supabase.from('shift_config').select('*'),
-      supabase.from('closed_dates').select('date').gte('date', periodStart).lte('date', periodEnd),
-    ])
-    // 期間切替により新しいfetchが開始されていたら古い結果は破棄する
-    if (fetchVersionRef.current !== version) return
-    if (rulesRes.error) console.error('shift_rules取得失敗:', rulesRes.error.message)
-    else if (rulesRes.data) setRules(rulesRes.data as RuleWithStaff[])
-    if (offRes.error) console.error('off_requests取得失敗:', offRes.error.message)
-    else if (offRes.data) setOffRequests(offRes.data as OffRequest[])
-    if (staffsRes.error) console.error('staffs(社員)取得失敗:', staffsRes.error.message)
-    else if (staffsRes.data) setAllStaffs(staffsRes.data)
-    if (execRes.error) console.error('staffs(役員)取得失敗:', execRes.error.message)
-    else if (execRes.data) setAllExecutives(execRes.data)
-    if (configRes.error) console.error('shift_config取得失敗:', configRes.error.message)
-    else if (configRes.data) setConfigs(configRes.data)
-    if (closedRes.error) console.error('closed_dates取得失敗:', closedRes.error.message)
-    else if (closedRes.data) setClosedDatesAuto(closedRes.data.map((r: { date: string }) => r.date.substring(0, 10)))
-    setLoading(false)
-  }, [period.start.toISOString(), period.end.toISOString()])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  // デフォルト時間を取得（shift_config は HH:MM:SS 形式のため HH:MM に正規化して返す）
-  // date を渡すと、下北沢（shopId=2）の仕込みは土日・祝日のみ11:00スタートになる
-  const getDefaultTime = (shopId: number, type: '仕込み' | '営業', date?: Date): { start: string; end: string } => {
-    // shift_config の仕込みレコードは default_end_time が仕込み/営業の境界時刻を示す
-    // default_start_time と default_end_time が同値の場合はconfig設定不備のため fallback を使用
-    const shikomiCfg = configs.find((c) => c.shop_id === shopId && c.type === '仕込み')
-    const eigyoCfg = configs.find((c) => c.shop_id === shopId && c.type === '営業')
-    const splitTime = (shikomiCfg?.default_end_time ?? '18:00:00').substring(0, 5)
-    const closeTime = (eigyoCfg?.default_end_time ?? '24:00:00').substring(0, 5)
-    if (type === '仕込み') {
-      const configStart = (shikomiCfg?.default_start_time ?? '10:00:00').substring(0, 5)
-      // startTime < splitTime なら正常なconfig、同値ならconfig不備なのでfallback
-      const baseStart = configStart < splitTime ? configStart : '10:00'
-      // 下北沢は土日・祝日のみ11:00スタート（三軒茶屋はデフォルト時間を使用）
-      const startTime = shopId === 2 && date && isWeekendOrHoliday(date) ? '11:00' : baseStart
-      return { start: startTime, end: splitTime }
-    } else {
-      return { start: splitTime, end: closeTime }
-    }
-  }
-
-  // 自動生成ロジック（優先: ルール設定社員 → ルール外社員 → 役員（均等）→ 空欄）
-  const generateShifts = () => {
-    const dates = eachDayOfInterval({ start: period.start, end: period.end })
-    const rows: GeneratedRow[] = []
-
-    // offMap: staff_id -> date -> type
-    const offMap: Record<number, Record<string, string>> = {}
-    offRequests.forEach((r) => {
-      if (!offMap[r.staff_id]) offMap[r.staff_id] = {}
-      offMap[r.staff_id][r.date.substring(0, 10)] = r.type
-    })
-
-    const staffMap: Record<number, Staff> = {}
-    allStaffs.forEach((s) => { staffMap[s.id] = s })
-
-    // 役員シフト数トラッカー（均等配置用）
-    const execShiftCount: Record<number, number> = {}
-    allExecutives.forEach(s => { execShiftCount[s.id] = 0 })
-
-    // 全店舗のルール設定済みスタッフID（Tier2で他店舗ルール社員を除外するために使用）
-    const allRuledIds = new Set(rules.map(r => r.staff_id))
-
-    for (const date of dates) {
-      const dateStr = format(date, 'yyyy-MM-dd')
-
-      // 休業日はスキップ
-      if (closedDatesAuto.includes(dateStr)) continue
-
-      // この日すでにいずれかの店舗に割り当て済みのスタッフID（重複配置防止）
-      const assignedToday = new Set<number>()
-
-      for (const shopId of [1, 2] as const) {
-        const shopRules = rules
-          .filter((r) => r.shop_id === shopId)
-          .sort((a, b) => a.priority - b.priority)
-
-        const shopRuledIds = new Set(shopRules.map(r => r.staff_id))
-
-        let fullDayStaff: Staff | null = null
-        const prepOnlyStaffList: Staff[] = []
-        const eigyoOnlyStaffList: Staff[] = []
-
-        // Tier1: ルール設定社員（優先順に）※他店舗割り当て済みは除外
-        for (const rule of shopRules) {
-          if (assignedToday.has(rule.staff_id)) continue
-          const staff = staffMap[rule.staff_id]
-          if (!staff) continue
-          const offType = offMap[rule.staff_id]?.[dateStr]
-          if (offType === '休み') continue
-          if (offType === '仕込みのみ') {
-            if (!fullDayStaff) prepOnlyStaffList.push(staff)
-            continue
-          }
-          if (offType === '営業のみ') {
-            if (!fullDayStaff) eigyoOnlyStaffList.push(staff)
-            continue
-          }
-          fullDayStaff = staff
-          break
-        }
-
-        // Tier2: 配属未設定の社員（どの店舗のルールにも含まれない）※他店舗割り当て済みは除外
-        if (!fullDayStaff) {
-          for (const staff of allStaffs) {
-            if (allRuledIds.has(staff.id)) continue  // 他店舗含む全ルール社員を除外
-            if (assignedToday.has(staff.id)) continue
-            const offType = offMap[staff.id]?.[dateStr]
-            if (offType === '休み') continue
-            if (offType === '仕込みのみ') {
-              prepOnlyStaffList.push(staff)
-              continue
-            }
-            if (offType === '営業のみ') {
-              eigyoOnlyStaffList.push(staff)
-              continue
-            }
-            fullDayStaff = staff
-            break
-          }
-        }
-
-        // Tier3: 役員（最もシフト数が少ない人を優先）※他店舗割り当て済みは除外
-        if (!fullDayStaff && allExecutives.length > 0) {
-          const available = allExecutives.filter(s =>
-            !assignedToday.has(s.id) && offMap[s.id]?.[dateStr] !== '休み'
-          )
-          if (available.length > 0) {
-            available.sort((a, b) => (execShiftCount[a.id] ?? 0) - (execShiftCount[b.id] ?? 0))
-            fullDayStaff = available[0]
-          }
-        }
-
-        // 仕込みのみの人の行を追加
-        for (const staff of prepOnlyStaffList) {
-          const t = getDefaultTime(shopId, '仕込み', date)
-          rows.push({
-            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-            staff_id: staff.id, staff_name: staff.name,
-            type: '仕込み', start_time: t.start, end_time: t.end, note: '仕込みのみ',
-          })
-          assignedToday.add(staff.id)
-        }
-
-        // 営業のみの人の行を追加
-        for (const staff of eigyoOnlyStaffList) {
-          const t = getDefaultTime(shopId, '営業', date)
-          rows.push({
-            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-            staff_id: staff.id, staff_name: staff.name,
-            type: '営業', start_time: t.start, end_time: t.end, note: '営業のみ',
-          })
-          assignedToday.add(staff.id)
-        }
-
-        // フル出勤の人（仕込み+営業 = 2行）
-        if (fullDayStaff) {
-          const isExec = fullDayStaff.employment_type === '役員'
-          if (isExec) execShiftCount[fullDayStaff.id] = (execShiftCount[fullDayStaff.id] ?? 0) + 1
-          const t1 = getDefaultTime(shopId, '仕込み', date)
-          const t2 = getDefaultTime(shopId, '営業', date)
-          rows.push({
-            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-            staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
-            type: '仕込み', start_time: t1.start, end_time: t1.end, note: isExec ? '役員' : '',
-          })
-          rows.push({
-            date: dateStr, shop_id: shopId, shop_name: SHOP_NAMES[shopId],
-            staff_id: fullDayStaff.id, staff_name: fullDayStaff.name,
-            type: '営業', start_time: t2.start, end_time: t2.end, note: isExec ? '役員' : '',
-          })
-          assignedToday.add(fullDayStaff.id)
-        }
-        // 埋まらない場合は空欄（エラーなし）
-      }
-    }
-
-    setPreview(rows)
-    setMessage('')
-  }
-
-  const confirmAll = async () => {
-    if (!preview || preview.length === 0) return
-    setSaving(true)
-    setMessage('')
-    // 期間内の社員・役員の確定シフトのみ削除してからinsert（前回生成分の残存を防ぐ）
-    // ※ アルバイトの手動確定シフトは削除しない
-    const periodStart = format(period.start, 'yyyy-MM-dd')
-    const periodEnd = format(period.end, 'yyyy-MM-dd')
-    const employeeIds = [
-      ...allStaffs.map(s => s.id),
-      ...allExecutives.map(s => s.id),
-    ]
-    if (employeeIds.length > 0) {
-      const { error: delErr } = await supabase.from('shifts_fixed')
-        .delete()
-        .gte('date', periodStart)
-        .lte('date', periodEnd)
-        .in('staff_id', employeeIds)
-      if (delErr) { setMessage('保存に失敗（削除エラー）: ' + delErr.message); setSaving(false); return }
-    }
-    const insertRows = preview.map((r) => ({
-      date: r.date, shop_id: r.shop_id, type: r.type,
-      staff_id: r.staff_id, start_time: r.start_time, end_time: r.end_time,
-    }))
-    const { error } = await supabase.from('shifts_fixed').insert(insertRows)
-    if (error) {
-      setMessage('保存に失敗: ' + error.message)
-      // INSERT失敗後もfetchDataを呼んでUIをDB実態に同期する（DELETEは成功済みの可能性があるため）
-      fetchData()
-    } else {
-      setMessage(`${preview.length}件のシフトを確定しました`)
-      setPreview(null)
-    }
-    setSaving(false)
-  }
-
-  const periodLabel = `${format(period.start, 'M/d')}〜${format(period.end, 'M/d')}`
-
-  // プレビューを日別に整理
-  const previewByDate = useMemo(() => {
-    if (!preview) return {}
-    const map: Record<string, GeneratedRow[]> = {}
-    preview.forEach((r) => {
-      if (!map[r.date]) map[r.date] = []
-      map[r.date].push(r)
-    })
-    return map
-  }, [preview])
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        社員の休み希望とルール設定をもとに、シフトを自動生成します。
-      </p>
-
-      {/* 期間選択 */}
-      <div className="flex items-center justify-center gap-4">
-        <button onClick={() => { setPeriodOffset((p) => p - 1); setPreview(null) }}
-          className="p-2 rounded-lg hover:bg-accent transition-colors">
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <span className="text-sm font-semibold min-w-[140px] text-center">{periodLabel}</span>
-        <button onClick={() => { setPeriodOffset((p) => p + 1); setPreview(null) }}
-          className="p-2 rounded-lg hover:bg-accent transition-colors">
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* 休み希望の概要 */}
-      {offRequests.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">休み希望の状況</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {allStaffs.map((staff) => {
-                const staffOff = offRequests.filter((r) => r.staff_id === staff.id)
-                const offCount = staffOff.filter((r) => r.type === '休み').length
-                const prepCount = staffOff.filter((r) => r.type === '仕込みのみ').length
-                const eigyoCount = staffOff.filter((r) => r.type === '営業のみ').length
-                return (
-                  <div key={staff.id} className="flex items-center justify-between text-sm py-0.5">
-                    <span>{staff.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {offCount > 0 && <span className="text-red-600 mr-1">休み {offCount}日</span>}
-                      {prepCount > 0 && <span className="text-amber-600 mr-1">仕込みのみ {prepCount}日</span>}
-                      {eigyoCount > 0 && <span className="text-indigo-600 mr-1">営業のみ {eigyoCount}日</span>}
-                      {offCount === 0 && prepCount === 0 && eigyoCount === 0 && <span>未提出</span>}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Button onClick={generateShifts} className="w-full h-11" disabled={loading}>
-        {loading ? (
-          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />読み込み中...</>
-        ) : (
-          <><Wand2 className="mr-2 h-4 w-4" />シフトを自動生成する</>
-        )}
-      </Button>
-
-      {/* プレビュー */}
-      {preview !== null && (
-        <>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>生成プレビュー（{preview.length}件）</span>
-                {preview.length === 0 && <span className="text-xs font-normal text-muted-foreground">割り当て可能な社員がいません</span>}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {Object.entries(previewByDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => (
-                <div key={date} className="mb-3 last:mb-0">
-                  <div className="text-xs font-medium text-muted-foreground mb-1">
-                    {format(new Date(date + 'T00:00:00'), 'M/d（E）', { locale: ja })}
-                  </div>
-                  <div className="space-y-1">
-                    {rows.sort((a, b) => a.shop_id - b.shop_id || a.type.localeCompare(b.type)).map((r) => (
-                      <div key={`${r.staff_name}-${r.shop_id}-${r.type}`} className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
-                        <span className="text-muted-foreground w-12">{r.shop_name === '三軒茶屋' ? '三茶' : '下北'}</span>
-                        <span className="font-medium">{r.staff_name}</span>
-                        <span className={`px-1.5 py-0.5 rounded-full ${r.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{r.type}</span>
-                        <span className="text-muted-foreground">{formatTime(r.start_time)}–{formatTime(r.end_time)}</span>
-                        {r.note && <span className="text-amber-600">({r.note})</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {preview.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">生成できるシフトがありません</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {preview.length > 0 && (
-            <Button onClick={confirmAll} className="w-full h-11" disabled={saving}>
-              {saving ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
-              ) : (
-                <><Check className="mr-2 h-4 w-4" />このシフトを確定する</>
-              )}
-            </Button>
-          )}
-        </>
-      )}
-
-      {message && (
-        <p className={`text-sm text-center ${message.includes('失敗') ? 'text-destructive' : 'text-emerald-600'}`}>{message}</p>
-      )}
-    </div>
-  )
-}
 
 // =============================================
 // ã¿ã2: ã·ããèª¿æ´ï¼ç¤¾å¡ã»å½¹å¡ï¼
@@ -1480,13 +1051,15 @@ function ShiftAdjustTab() {
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
   const [fullTimeStaffs, setFullTimeStaffs] = useState<Staff[]>([])
   const [shops, setShops] = useState<Shop[]>([])
+  // shift_rules による配属設定: staffId -> shopId（シフト調整の初期デフォルト店舗として使用）
+  const [staffDefaultShops, setStaffDefaultShops] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msgText, setMsgText] = useState('')
   const [msgType, setMsgType] = useState<'ok' | 'warn' | 'err'>('ok')
   // admin-assigned off days: staffId -> Set<'yyyy-MM-dd'>
   const [assignedOff, setAssignedOff] = useState<Record<number, Set<string>>>({})
-  // per-cell shop overrides: staffId -> date -> shopId (only when different from staff.shop_id)
+  // per-cell shop overrides: staffId -> date -> shopId (only when different from staffDefaultShops)
   const [cellShops, setCellShops] = useState<Record<number, Record<string, number>>>({})
 
   const periodDays = useMemo(() => {
@@ -1502,7 +1075,7 @@ function ShiftAdjustTab() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [staffRes, offRes, fixedRes, configRes, shopsRes] = await Promise.all([
+    const [staffRes, offRes, fixedRes, configRes, shopsRes, rulesRes] = await Promise.all([
       supabase.from('staffs').select('*')
         .eq('is_active', true)
         .is('deleted_at', null)
@@ -1515,6 +1088,7 @@ function ShiftAdjustTab() {
         .lte('date', periodEnd),
       supabase.from('shift_config').select('*'),
       supabase.from('shops').select('*').eq('is_active', true),
+      supabase.from('shift_rules').select('*').eq('is_active', true),
     ])
     const staffs = (staffRes.data || []).filter((s: Staff) => s.name !== 'いっさ')
     setFullTimeStaffs(staffs)
@@ -1522,6 +1096,12 @@ function ShiftAdjustTab() {
     setFixedShifts(fixedRes.data || [])
     setConfigs(configRes.data || [])
     setShops(shopsRes.data || [])
+    // Build staffDefaultShops: staffId -> shopId (first rule wins per staff)
+    const defaultShops: Record<number, number> = {}
+    for (const rule of (rulesRes.data || []) as ShiftRule[]) {
+      if (!defaultShops[rule.staff_id]) defaultShops[rule.staff_id] = rule.shop_id
+    }
+    setStaffDefaultShops(defaultShops)
     setLoading(false)
   }, [periodStart, periodEnd])
 
@@ -1578,9 +1158,10 @@ function ShiftAdjustTab() {
     return req.type === '休み' ? 'req-off' : 'limited'
   }
 
-  // Returns the shop_id for a given cell (falls back to staff's default)
-  const getCellShopId = (staffId: number, ds: string, defaultShopId: number): number =>
-    cellShops[staffId]?.[ds] ?? defaultShopId
+  // Returns the shop_id for a given cell.
+  // Priority: per-cell override → shift_rules config → staff.shop_id
+  const getCellShopId = (staffId: number, ds: string, fallbackShopId: number): number =>
+    cellShops[staffId]?.[ds] ?? staffDefaultShops[staffId] ?? fallbackShopId
 
   // Returns shop index in the active shops array (for color/label picking)
   const getShopIdx = (shopId: number): number => {
@@ -1938,7 +1519,7 @@ function ShiftAdjustTab() {
 // メインページ
 // =============================================
 
-type ManageTab = 'confirm' | 'rules' | 'auto' | 'adjust'
+type ManageTab = 'confirm' | 'rules' | 'adjust'
 
 export default function ManagePage() {
   const router = useRouter()
@@ -1976,14 +1557,7 @@ export default function ManagePage() {
           <Settings className="h-4 w-4" />
           ルール設定
         </button>
-        <button onClick={() => setActiveTab('auto')}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'auto' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-          }`}>
-          <Wand2 className="h-4 w-4" />
-          自動生成
-        </button>
-        <button onClick={() => setActiveTab('adjust')}
+<button onClick={() => setActiveTab('adjust')}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
             activeTab === 'adjust' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
           }`}
@@ -1995,7 +1569,6 @@ export default function ManagePage() {
 
       {activeTab === 'confirm' && <ShiftConfirmTab />}
       {activeTab === 'rules' && <RulesTab />}
-      {activeTab === 'auto' && <AutoGenerateTab />}
       {activeTab === 'adjust' && <ShiftAdjustTab />}
     </div>
   )
