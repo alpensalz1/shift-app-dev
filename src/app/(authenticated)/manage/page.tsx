@@ -1158,10 +1158,26 @@ function ShiftAdjustTab() {
     return req.type === '休み' ? 'req-off' : 'limited'
   }
 
+  // shift_rules が未設定のスタッフ（役員など）は、アクティブ店舗に順番に割り当てて均等分散する。
+  // 例：役員2名・店舗2店の場合 → 1人目=三軒茶屋、2人目=下北沢
+  // ※ cellShops（保存済み値）や staffDefaultShops（ルール設定）が存在する場合はそちらが優先される。
+  const unruledDefault = useMemo(() => {
+    const activeShopIds = shops.filter(sh => sh.is_active !== false).map(sh => sh.id)
+    if (activeShopIds.length === 0) return {} as Record<number, number>
+    const result: Record<number, number> = {}
+    let unruledIdx = 0
+    for (const staff of fullTimeStaffs) {
+      if (staffDefaultShops[staff.id] !== undefined) continue // ルール設定あり → スキップ
+      result[staff.id] = activeShopIds[unruledIdx % activeShopIds.length]
+      unruledIdx++
+    }
+    return result
+  }, [fullTimeStaffs, staffDefaultShops, shops])
+
   // Returns the shop_id for a given cell.
-  // Priority: per-cell override → shift_rules config → staff.shop_id
+  // Priority: per-cell override (cellShops) → shift_rules config → unruled distribution → staff.shop_id
   const getCellShopId = (staffId: number, ds: string, fallbackShopId: number): number =>
-    cellShops[staffId]?.[ds] ?? staffDefaultShops[staffId] ?? fallbackShopId
+    cellShops[staffId]?.[ds] ?? staffDefaultShops[staffId] ?? unruledDefault[staffId] ?? fallbackShopId
 
   // Returns shop index in the active shops array (for color/label picking)
   const getShopIdx = (shopId: number): number => {
