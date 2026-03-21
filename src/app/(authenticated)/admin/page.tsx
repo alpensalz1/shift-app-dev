@@ -1010,7 +1010,7 @@ function SubmissionStatusTab() {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     const [staffRes, partReqs, fullReqs] = await Promise.all([
-      supabase.from('staffs').select('*').neq('employment_type', 'システム管理者').order('name'),
+      supabase.from('staffs').select('*').eq('is_active', true).neq('employment_type', 'システム管理者').order('name'),
       supabase.from('shift_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
       supabase.from('off_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
     ])
