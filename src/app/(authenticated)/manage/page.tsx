@@ -1448,6 +1448,7 @@ function AutoGenerateTab() {
 // =============================================
 const MIN_OFF_DAYS = 5
 
+
 function ShiftAdjustTab() {
   const today = useMemo(() => new Date(), [])
   // Default to the next half-month period that needs adjustment
@@ -1455,7 +1456,7 @@ function ShiftAdjustTab() {
     const day = today.getDate()
     const year = today.getFullYear()
     const month = today.getMonth()
-    // If in first half â show second half of this month; else show first half of next
+    // If in first half → show second half of this month; else show first half of next
     if (day <= 15) {
       return { year, month, isFirstHalf: false }
     } else {
@@ -1495,7 +1496,7 @@ function ShiftAdjustTab() {
       supabase.from('staffs').select('*')
         .eq('is_active', true)
         .is('deleted_at', null)
-        .in('employment_type', ['ç¤¾å¡', 'å½¹å¡']),
+        .in('employment_type', ['社員', '役員']),
       supabase.from('off_requests').select('*')
         .gte('date', periodStart)
         .lte('date', periodEnd),
@@ -1504,7 +1505,7 @@ function ShiftAdjustTab() {
         .lte('date', periodEnd),
       supabase.from('shift_config').select('*'),
     ])
-    const staffs = (staffRes.data || []).filter((s: Staff) => s.name !== 'ãã£ã')
+    const staffs = (staffRes.data || []).filter((s: Staff) => s.name !== 'いっさ')
     setFullTimeStaffs(staffs)
     setOffRequests(offRes.data || [])
     setFixedShifts(fixedRes.data || [])
@@ -1520,10 +1521,10 @@ function ShiftAdjustTab() {
     const newAsgn: Record<number, Set<string>> = {}
     for (const staff of fullTimeStaffs) {
       const staffFixed = fixedShifts.filter(f => f.staff_id === staff.id)
-      if (staffFixed.length === 0) continue // not saved yet â all default to work
+      if (staffFixed.length === 0) continue // not saved yet → all default to work
       const fixedDates = new Set(staffFixed.map(f => f.date))
       const reqOffDates = new Set(
-        offRequests.filter(r => r.staff_id === staff.id && r.type === 'ä¼ã¿').map(r => r.date)
+        offRequests.filter(r => r.staff_id === staff.id && r.type === '休み').map(r => r.date)
       )
       const asgnSet = new Set<string>()
       for (const day of periodDays) {
@@ -1553,7 +1554,7 @@ function ShiftAdjustTab() {
     if (assignedOff[staffId]?.has(ds)) return 'asgn-off'
     const req = getOffReq(staffId, ds)
     if (!req) return 'work'
-    return req.type === 'ä¼ã¿' ? 'req-off' : 'limited'
+    return req.type === '休み' ? 'req-off' : 'limited'
   }
 
   const showMsg = (text: string, type: 'ok' | 'warn' | 'err' = 'ok') => {
@@ -1564,7 +1565,7 @@ function ShiftAdjustTab() {
   const handleCellClick = (staffId: number, ds: string) => {
     const state = getCellState(staffId, ds)
     if (state === 'req-off') {
-      showMsg('å¸æä¼ã¯å¤æ´ã§ãã¾ãã', 'warn'); return
+      showMsg('希望休は変更できません', 'warn'); return
     }
     setAssignedOff(prev => {
       const s = new Set(prev[staffId] || [])
@@ -1574,7 +1575,7 @@ function ShiftAdjustTab() {
   }
 
   const getOffCount = (staffId: number) => {
-    const req = offRequests.filter(r => r.staff_id === staffId && r.type === 'ä¼ã¿').length
+    const req = offRequests.filter(r => r.staff_id === staffId && r.type === '休み').length
     return req + (assignedOff[staffId]?.size || 0)
   }
   const getWorkCount = (staffId: number) => periodDays.length - getOffCount(staffId)
@@ -1583,22 +1584,22 @@ function ShiftAdjustTab() {
   const handleSave = async () => {
     const unmet = fullTimeStaffs.filter(s => getNeedOff(s.id) > 0)
     if (unmet.length > 0) {
-      const names = unmet.map(s => s.name).join('ã')
-      const ok = window.confirm(`${names} ã®ä¼ã¿ãã¾ã ${MIN_OFF_DAYS}æ¥ã«éãã¦ãã¾ããã\nãã®ã¾ã¾ä¿å­ãã¾ããï¼`)
+      const names = unmet.map(s => s.name).join('、')
+      const ok = window.confirm(`${names} の休みがまだ${MIN_OFF_DAYS}日に達していません。\nこのまま保存しますか？`)
       if (!ok) return
     }
     setSaving(true)
     try {
       const staffIds = fullTimeStaffs.map(s => s.id)
-      // Delete all existing shifts_fixed for ç¤¾å¡/å½¹å¡ in this period
+      // Delete all existing shifts_fixed for 社員/役員 in this period
       await supabase.from('shifts_fixed')
         .delete()
         .in('staff_id', staffIds)
         .gte('date', periodStart)
         .lte('date', periodEnd)
 
-      const shimeCfg = configs.find(c => c.type === 'ä»è¾¼ã¿')
-      const eigCfg = configs.find(c => c.type === 'å¶æ¥­')
+      const shimeCfg = configs.find(c => c.type === '仕込み')
+      const eigCfg = configs.find(c => c.type === '営業')
       const toInsert: Omit<ShiftFixed, 'id' | 'created_at'>[] = []
 
       for (const staff of fullTimeStaffs) {
@@ -1608,19 +1609,19 @@ function ShiftAdjustTab() {
           if (state === 'req-off' || state === 'asgn-off') continue
 
           const offReq = getOffReq(staff.id, ds)
-          const isShimeOnly = offReq?.type === 'ä»è¾¼ã¿ã®ã¿'
-          const isEigOnly = offReq?.type === 'å¶æ¥­ã®ã¿'
+          const isShimeOnly = offReq?.type === '仕込みのみ'
+          const isEigOnly = offReq?.type === '営業のみ'
 
           if (!isEigOnly) {
             toInsert.push({
-              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: 'ä»è¾¼ã¿',
+              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: '仕込み',
               start_time: shimeCfg?.default_start_time ?? '14:00:00',
               end_time: shimeCfg?.default_end_time ?? '17:00:00',
             })
           }
           if (!isShimeOnly) {
             toInsert.push({
-              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: 'å¶æ¥­',
+              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: '営業',
               start_time: eigCfg?.default_start_time ?? '17:00:00',
               end_time: eigCfg?.default_end_time ?? '24:00:00',
             })
@@ -1632,18 +1633,18 @@ function ShiftAdjustTab() {
         const { error } = await supabase.from('shifts_fixed').insert(toInsert)
         if (error) throw error
       }
-      showMsg(`ä¿å­ãã¾ããï¼${Math.ceil(toInsert.length / 2)}æ¥åã®ã·ãããç¢ºåï¼`)
+      showMsg(`保存しました（${Math.ceil(toInsert.length / 2)}日分のシフトを確定）`)
       await fetchData()
     } catch (e) {
       console.error(e)
-      showMsg('ã¨ã©ã¼ãçºçãã¾ãã', 'err')
+      showMsg('エラーが発生しました', 'err')
     } finally {
       setSaving(false)
     }
   }
 
-  const DAY_NAMES = ['æ¥', 'æ', 'ç«', 'æ°´', 'æ¨', 'é', 'å']
-  const periodLabel = `${selectedMonth + 1}æ${isFirstHalf ? 'åå' : 'å¾å'}`
+  const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
+  const periodLabel = `${selectedMonth + 1}月${isFirstHalf ? '前半' : '後半'}`
   const okCount = fullTimeStaffs.filter(s => getNeedOff(s.id) === 0).length
 
   return (
@@ -1659,9 +1660,9 @@ function ShiftAdjustTab() {
 
       {/* Rule reminder */}
       <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 leading-relaxed">
-        <span className="font-bold">ã«ã¼ã«ï¼</span>
-        ç¤¾å¡ã»å½¹å¡ã¯åæã«ã¤ãæä½ <span className="font-bold">5æ¥ã®ä¼ã¿</span> ãå¿è¦ã§ãã
-        ð¸å¸æä¼ã¯å¤æ´ä¸å¯ãæ°´è²ã®å²ãå½ã¦ä¼ã¯åºå¤æ¥ãã¯ãªãã¯ãã¦è¿½å ã§ãã¾ãã
+        <span className="font-bold">ルール：</span>
+        社員・役員は半月につき最低 <span className="font-bold">5日の休み</span> が必要です。
+        🌸希望休は変更不可。水色の割り当て休は出勤日をクリックして追加できます。
       </div>
 
       {/* Period selector */}
@@ -1670,30 +1671,30 @@ function ShiftAdjustTab() {
           <button onClick={prevMonth} className="p-1 hover:bg-white rounded-lg transition-colors">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold flex-1 text-center">{selectedYear}å¹´{periodLabel}</span>
+          <span className="text-sm font-semibold flex-1 text-center">{selectedYear}年{periodLabel}</span>
           <button onClick={nextMonth} className="p-1 hover:bg-white rounded-lg transition-colors">
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        {/* åå/å¾å toggle */}
+        {/* 前半/後半 toggle */}
         <div className="flex rounded-xl overflow-hidden border border-border bg-muted/30 flex-shrink-0">
           <button
             onClick={() => setIsFirstHalf(true)}
             className={`px-3 py-1.5 text-xs font-semibold transition-colors ${isFirstHalf ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:bg-muted/60'}`}
-          >åå</button>
+          >前半</button>
           <button
             onClick={() => setIsFirstHalf(false)}
             className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!isFirstHalf ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:bg-muted/60'}`}
-          >å¾å</button>
+          >後半</button>
         </div>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-indigo-500" /><span>åºå¤ï¼ã¯ãªãã¯âå²ãå½ã¦ä¼ï¼</span></div>
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-pink-100 border border-pink-300" /><span>å¸æä¼ã»æ¬äººç³è«ï¼å¤æ´ä¸å¯ï¼</span></div>
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>å²ãå½ã¦ä¼ï¼ã¯ãªãã¯âåºå¤ã«æ»ãï¼</span></div>
-        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" /><span>éå®åºå¤ï¼ä»è¾¼/å¶æ¥­ã®ã¿ï¼</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-indigo-500" /><span>出勤（クリック→割り当て休）</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-pink-100 border border-pink-300" /><span>希望休・本人申請（変更不可）</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>割り当て休（クリック→出勤に戻す）</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" /><span>限定出勤（仕込/営業のみ）</span></div>
       </div>
 
       {loading ? (
@@ -1701,7 +1702,7 @@ function ShiftAdjustTab() {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : fullTimeStaffs.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">ç¤¾å¡ã»å½¹å¡ã®ã¹ã¿ãããè¦ã¤ããã¾ãã</p>
+        <p className="text-sm text-muted-foreground text-center py-8">社員・役員のスタッフが見つかりません</p>
       ) : (
         <>
           {/* Scrollable grid */}
@@ -1709,7 +1710,7 @@ function ShiftAdjustTab() {
             <div style={{ minWidth: `${132 + periodDays.length * 36 + 136}px` }}>
               {/* Header */}
               <div className="flex items-end gap-1 bg-muted/40 px-2 py-1.5 border-b border-border/50">
-                <div style={{ width: 132, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">ã¹ã¿ãã</div>
+                <div style={{ width: 132, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">スタッフ</div>
                 {periodDays.map(day => {
                   const ds = format(day, 'yyyy-MM-dd')
                   const dow = getDay(day)
@@ -1721,7 +1722,7 @@ function ShiftAdjustTab() {
                     </div>
                   )
                 })}
-                <div style={{ width: 136, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide pl-2">ç¶æ³</div>
+                <div style={{ width: 136, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide pl-2">状況</div>
               </div>
 
               {/* Staff rows */}
@@ -1730,7 +1731,7 @@ function ShiftAdjustTab() {
                 const workCount = getWorkCount(staff.id)
                 const needOff = getNeedOff(staff.id)
                 const ok = needOff === 0
-                const reqOffCount = offRequests.filter(r => r.staff_id === staff.id && r.type === 'ä¼ã¿').length
+                const reqOffCount = offRequests.filter(r => r.staff_id === staff.id && r.type === '休み').length
                 const asgnOffCount = assignedOff[staff.id]?.size || 0
                 return (
                   <div
@@ -1741,7 +1742,7 @@ function ShiftAdjustTab() {
                     <div style={{ width: 132, flexShrink: 0 }}>
                       <div className="text-xs font-semibold text-foreground truncate">{staff.name}</div>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                        staff.employment_type === 'å½¹å¡' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
+                        staff.employment_type === '役員' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
                       }`}>{staff.employment_type}</span>
                     </div>
 
@@ -1754,16 +1755,16 @@ function ShiftAdjustTab() {
                       switch (state) {
                         case 'work':
                           bg = 'bg-indigo-500 hover:bg-indigo-600 text-white cursor-pointer'
-                          label = 'åº'; break
+                          label = '出'; break
                         case 'req-off':
                           bg = 'bg-pink-100 text-pink-700 border border-pink-300 cursor-not-allowed'
-                          label = 'ä¼'; break
+                          label = '休'; break
                         case 'limited':
                           bg = 'bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 cursor-pointer'
-                          label = offReq?.type === 'ä»è¾¼ã¿ã®ã¿' ? 'ä»' : 'å¶'; break
+                          label = offReq?.type === '仕込みのみ' ? '仕' : '営'; break
                         case 'asgn-off':
                           bg = 'bg-sky-50 text-sky-600 border border-dashed border-sky-300 hover:bg-sky-100 cursor-pointer'
-                          label = 'ä¼'; break
+                          label = '休'; break
                       }
                       return (
                         <div
@@ -1771,11 +1772,11 @@ function ShiftAdjustTab() {
                           style={{ width: 34, height: 34, flexShrink: 0, position: 'relative' }}
                           className={`rounded-lg flex items-center justify-center text-[11px] font-bold select-none transition-colors ${bg}`}
                           onClick={() => handleCellClick(staff.id, ds)}
-                          title={`${format(day, 'M/d')} ${DAY_NAMES[getDay(day)]}ï½${
-                            state === 'work' ? 'åºå¤ â ã¯ãªãã¯ã§å²ãå½ã¦ä¼' :
-                            state === 'req-off' ? 'ð¸ å¸æä¼ï¼å¤æ´ä¸å¯ï¼' :
-                            state === 'limited' ? `éå®åºå¤ï¼${offReq?.type}ï¼` :
-                            'å²ãå½ã¦ä¼ â ã¯ãªãã¯ã§åºå¤ã«æ»ã'
+                          title={`${format(day, 'M/d')} ${DAY_NAMES[getDay(day)]}｜${
+                            state === 'work' ? '出勤 → クリックで割り当て休' :
+                            state === 'req-off' ? '🌸 希望休（変更不可）' :
+                            state === 'limited' ? `限定出勤（${offReq?.type}）` :
+                            '割り当て休 → クリックで出勤に戻す'
                           }`}
                         >
                           {state === 'req-off' ? (
@@ -1792,12 +1793,12 @@ function ShiftAdjustTab() {
                     <div style={{ width: 136, flexShrink: 0 }} className="pl-2 space-y-1">
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                          {workCount}åº/{reqOffCount}å¸+{asgnOffCount}ä»
+                          {workCount}出/{reqOffCount}希+{asgnOffCount}付
                         </span>
                         {ok ? (
                           <span className="text-[10px] font-bold text-emerald-600 px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 whitespace-nowrap">OK</span>
                         ) : (
-                          <span className="text-[10px] font-bold text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 whitespace-nowrap">ãã¨{needOff}æ¥</span>
+                          <span className="text-[10px] font-bold text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 whitespace-nowrap">あと{needOff}日</span>
                         )}
                       </div>
                       <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
@@ -1816,7 +1817,7 @@ function ShiftAdjustTab() {
           {/* Summary + Save */}
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs text-muted-foreground">
-              {okCount}/{fullTimeStaffs.length}å æ¡ä»¶ã¯ãªã¢
+              {okCount}/{fullTimeStaffs.length}名 条件クリア
             </span>
             <Button
               onClick={handleSave}
@@ -1824,7 +1825,7 @@ function ShiftAdjustTab() {
               className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              ã·ãããç¢ºå®ã»ä¿å­
+              シフトを確定・保存
             </Button>
           </div>
         </>
@@ -1832,11 +1833,10 @@ function ShiftAdjustTab() {
     </div>
   )
 }
+
 // =============================================
 // メインページ
 // =============================================
-
-type ManageTab = 'confirm' | 'rules' | 'auto' | 'adjust'
 
 export default function ManagePage() {
   const router = useRouter()
