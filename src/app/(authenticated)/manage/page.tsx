@@ -735,7 +735,7 @@ function ShiftConfirmTab() {
                             {fixedForStaff.map(f => (
                               <span key={f.id} className="inline-flex items-center gap-0.5 bg-emerald-100 rounded-full px-2 py-0.5">
                                 <Check className="h-2.5 w-2.5" />
-                                {SHOP_NAMES[f.shop_id]} {f.type} {formatTime(f.start_time)}–{formatTime(f.end_time)}
+                                {f.shop_id != null ? SHOP_NAMES[f.shop_id] : ''} {f.type} {formatTime(f.start_time)}–{formatTime(f.end_time)}
                               </span>
                             ))}
                           </div>
@@ -1061,6 +1061,8 @@ function ShiftAdjustTab() {
   const [assignedOff, setAssignedOff] = useState<Record<number, Set<string>>>({})
   // per-cell shop overrides: staffId -> date -> shopId (only when different from staffDefaultShops)
   const [cellShops, setCellShops] = useState<Record<number, Record<string, number>>>({})
+  // 作業日（店舗なし出勤）: staffId -> Set<'yyyy-MM-dd'>
+  const [taskDays, setTaskDays] = useState<Record<number, Set<string>>>({})
 
   const periodDays = useMemo(() => {
     const start = new Date(selectedYear, selectedMonth, isFirstHalf ? 1 : 16)
@@ -1107,11 +1109,12 @@ function ShiftAdjustTab() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Reconstruct assignedOff and cellShops from existing shifts_fixed when data loads
+  // Reconstruct assignedOff, cellShops, taskDays from existing shifts_fixed when data loads
   useEffect(() => {
     if (loading) return
     const newAsgn: Record<number, Set<string>> = {}
     const newCellShops: Record<number, Record<string, number>> = {}
+    const newTaskDays: Record<number, Set<string>> = {}
     for (const staff of fullTimeStaffs) {
       const staffFixed = fixedShifts.filter(f => f.staff_id === staff.id)
       if (staffFixed.length === 0) continue // not saved yet → all default to work
@@ -1126,15 +1129,22 @@ function ShiftAdjustTab() {
         if (!fixedDates.has(ds) && !reqOffDates.has(ds)) asgnSet.add(ds)
       }
       if (asgnSet.size > 0) newAsgn[staff.id] = asgnSet
-      // Reconstruct per-cell shop from first fixed shift per date
+      // Reconstruct 作業日 (type='作業日')
+      const taskSet = new Set<string>()
+      for (const fix of staffFixed) {
+        if (fix.type === '作業日') taskSet.add(fix.date)
+      }
+      if (taskSet.size > 0) newTaskDays[staff.id] = taskSet
+      // Reconstruct per-cell shop from first non-作業日 fixed shift per date
       const shopMap: Record<string, number> = {}
       for (const fix of staffFixed) {
-        if (!shopMap[fix.date]) shopMap[fix.date] = fix.shop_id
+        if (fix.type !== '作業日' && fix.shop_id != null && !shopMap[fix.date]) shopMap[fix.date] = fix.shop_id
       }
       if (Object.keys(shopMap).length > 0) newCellShops[staff.id] = shopMap
     }
     setAssignedOff(newAsgn)
     setCellShops(newCellShops)
+    setTaskDays(newTaskDays)
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Navigate month
@@ -1151,8 +1161,9 @@ function ShiftAdjustTab() {
   const getOffReq = (staffId: number, ds: string) =>
     offRequests.find(r => r.staff_id === staffId && r.date === ds)
 
-  const getCellState = (staffId: number, ds: string): 'work' | 'req-off' | 'limited' | 'asgn-off' => {
+  const getCellState = (staffId: number, ds: string): 'work' | 'req-off' | 'limited' | 'asgn-off' | 'work-task' => {
     if (assignedOff[staffId]?.has(ds)) return 'asgn-off'
+    if (taskDays[staffId]?.has(ds)) return 'work-task'
     const req = getOffReq(staffId, ds)
     if (!req) return 'work'
     return req.type === '休み' ? 'req-off' : 'limited'
@@ -1197,7 +1208,7 @@ function ShiftAdjustTab() {
     }
 
     if (state === 'asgn-off') {
-      // Off → revert to work at default shop
+      // 割当休 → 出勤（デフォルト店舗）に戻す
       setAssignedOff(prev => {
         const s = new Set(prev[staffId] || [])
         s.delete(ds)
@@ -1211,12 +1222,27 @@ function ShiftAdjustTab() {
       return
     }
 
-    // work or limited → cycle shops (and eventually to asgn-off for work cells)
+    if (state === 'work-task') {
+      // 作業日 → 割当休
+      setTaskDays(prev => {
+        const s = new Set(prev[staffId] || [])
+        s.delete(ds)
+        return { ...prev, [staffId]: s }
+      })
+      setAssignedOff(prev => {
+        const s = new Set(prev[staffId] || [])
+        s.add(ds)
+        return { ...prev, [staffId]: s }
+      })
+      return
+    }
+
+    // work or limited → 店舗サイクル（全店舗を一周したら作業日 → 割当休）
     const activeShops = shops.filter(sh => sh.is_active !== false)
     if (activeShops.length < 2) {
-      // Only 1 shop → original toggle (work↔off) for work cells
+      // 店舗が1つの場合: work → 作業日 → 割当休 → work
       if (state === 'work') {
-        setAssignedOff(prev => {
+        setTaskDays(prev => {
           const s = new Set(prev[staffId] || [])
           s.add(ds)
           return { ...prev, [staffId]: s }
@@ -1231,8 +1257,8 @@ function ShiftAdjustTab() {
     const nextShop = activeShops[nextIdx]
 
     if (state === 'work' && nextIdx === 0 && currentIdx !== 0) {
-      // Completed full cycle of all shops → go to asgn-off
-      setAssignedOff(prev => {
+      // 全店舗を一周 → 作業日へ
+      setTaskDays(prev => {
         const s = new Set(prev[staffId] || [])
         s.add(ds)
         return { ...prev, [staffId]: s }
@@ -1243,7 +1269,7 @@ function ShiftAdjustTab() {
         return { ...prev, [staffId]: m }
       })
     } else {
-      // Advance to next shop
+      // 次の店舗へ
       setCellShops(prev => ({
         ...prev,
         [staffId]: { ...(prev[staffId] || {}), [ds]: nextShop.id }
@@ -1256,13 +1282,25 @@ function ShiftAdjustTab() {
     return req + (assignedOff[staffId]?.size || 0)
   }
   const getWorkCount = (staffId: number) => periodDays.length - getOffCount(staffId)
+  // 休日数が5〜6日の範囲内かチェック（0=OK, 正=不足, 負=過多）
+  const getOffDiff = (staffId: number) => {
+    const off = getOffCount(staffId)
+    if (off < MIN_OFF_DAYS) return off - MIN_OFF_DAYS       // 負（不足）
+    if (off > MIN_OFF_DAYS + 1) return off - (MIN_OFF_DAYS + 1) // 正（過多）
+    return 0 // 5 or 6 → OK
+  }
   const getNeedOff = (staffId: number) => Math.max(0, MIN_OFF_DAYS - getOffCount(staffId))
 
   const handleSave = async () => {
-    const unmet = fullTimeStaffs.filter(s => getNeedOff(s.id) > 0)
+    const unmet = fullTimeStaffs.filter(s => getOffDiff(s.id) !== 0)
     if (unmet.length > 0) {
-      const names = unmet.map(s => s.name).join('、')
-      const ok = window.confirm(`${names} の休みがまだ${MIN_OFF_DAYS}日に達していません。\nこのまま保存しますか？`)
+      const msgs = unmet.map(s => {
+        const diff = getOffDiff(s.id)
+        return diff < 0
+          ? `${s.name}（あと${Math.abs(diff)}日休みが必要）`
+          : `${s.name}（休みが${diff}日多い）`
+      }).join('\n')
+      const ok = window.confirm(`休日数が5〜6日の範囲外のスタッフがいます：\n${msgs}\n\nこのまま保存しますか？`)
       if (!ok) return
     }
     setSaving(true)
@@ -1282,6 +1320,15 @@ function ShiftAdjustTab() {
           const ds = format(day, 'yyyy-MM-dd')
           const state = getCellState(staff.id, ds)
           if (state === 'req-off' || state === 'asgn-off') continue
+
+          // 作業日: 店舗なし・単一レコード
+          if (state === 'work-task') {
+            toInsert.push({
+              date: ds, shop_id: null, staff_id: staff.id, type: '作業日',
+              start_time: '10:00:00', end_time: null,
+            })
+            continue
+          }
 
           // Use per-cell shop if set, otherwise fall back to staff's default
           const shopId = getCellShopId(staff.id, ds, staff.shop_id)
@@ -1344,8 +1391,8 @@ function ShiftAdjustTab() {
       {/* Rule reminder */}
       <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 leading-relaxed">
         <span className="font-bold">ルール：</span>
-        社員・役員は半月につき最低 <span className="font-bold">5日の休み</span> が必要です。
-        🌸希望休は変更不可。出勤セルは <span className="font-bold">タップで店舗切替</span>（全店舗を一周すると休みに）。
+        社員・役員は半月につき <span className="font-bold">5日または6日の休み</span> が必要です。
+        🌸希望休は変更不可。出勤セルは <span className="font-bold">タップで店舗切替</span>（全店舗を一周すると作業日→休みに）。
       </div>
 
       {/* Period selector */}
@@ -1385,6 +1432,7 @@ function ShiftAdjustTab() {
         <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-pink-100 border border-pink-300" /><span>希望休・本人申請（変更不可）</span></div>
         <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>割り当て休</span></div>
         <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" /><span>限定出勤（仕込/営業のみ）</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-purple-100 border border-purple-300 flex items-center justify-center"><span className="text-purple-700 font-bold" style={{fontSize:8}}>作</span></div><span>作業日（店舗外勤務）</span></div>
       </div>
 
       {loading ? (
@@ -1420,7 +1468,8 @@ function ShiftAdjustTab() {
                 const offCount = getOffCount(staff.id)
                 const workCount = getWorkCount(staff.id)
                 const needOff = getNeedOff(staff.id)
-                const ok = needOff === 0
+                const offDiff = getOffDiff(staff.id)
+                const ok = offDiff === 0
                 const reqOffCount = offRequests.filter(r => r.staff_id === staff.id && r.type === '休み').length
                 const asgnOffCount = assignedOff[staff.id]?.size || 0
                 return (
@@ -1460,6 +1509,9 @@ function ShiftAdjustTab() {
                         case 'asgn-off':
                           bg = 'bg-sky-50 text-sky-600 border border-dashed border-sky-300 hover:bg-sky-100 cursor-pointer'
                           label = '休'; break
+                        case 'work-task':
+                          bg = 'bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-200 cursor-pointer'
+                          label = '作'; break
                       }
                       return (
                         <div
@@ -1471,6 +1523,7 @@ function ShiftAdjustTab() {
                             state === 'work' ? `${shop?.name ?? ''}出勤 → タップで店舗切替` :
                             state === 'req-off' ? '🌸 希望休（変更不可）' :
                             state === 'limited' ? `限定出勤（${offReq?.type}）@ ${shop?.name ?? ''}` :
+                            state === 'work-task' ? '作業日（店舗外勤務）→ タップで割当休に' :
                             '割り当て休 → タップで出勤に戻す'
                           }`}
                         >
@@ -1494,13 +1547,15 @@ function ShiftAdjustTab() {
                         </span>
                         {ok ? (
                           <span className="text-[10px] font-bold text-emerald-600 px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 whitespace-nowrap">OK</span>
+                        ) : offDiff < 0 ? (
+                          <span className="text-[10px] font-bold text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 whitespace-nowrap">あと{Math.abs(offDiff)}日</span>
                         ) : (
-                          <span className="text-[10px] font-bold text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 whitespace-nowrap">あと{needOff}日</span>
+                          <span className="text-[10px] font-bold text-orange-600 px-1.5 py-0.5 rounded-md bg-orange-50 border border-orange-200 whitespace-nowrap">{offDiff}日多い</span>
                         )}
                       </div>
                       <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all ${ok ? 'bg-emerald-500' : needOff >= 3 ? 'bg-rose-500' : 'bg-amber-500'}`}
+                          className={`h-full rounded-full transition-all ${ok ? 'bg-emerald-500' : offDiff > 0 ? 'bg-orange-400' : needOff >= 3 ? 'bg-rose-500' : 'bg-amber-500'}`}
                           style={{ width: `${Math.min(100, Math.round((workCount / periodDays.length) * 100))}%` }}
                         />
                       </div>

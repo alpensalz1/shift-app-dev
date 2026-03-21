@@ -47,8 +47,8 @@ export interface ShiftRequest {
 export interface ShiftFixed {
   id: number
   date: string
-  shop_id: number
-  type: '仕込み' | '営業'
+  shop_id: number | null
+  type: '仕込み' | '営業' | '作業日'
   staff_id: number
   start_time: string
   end_time: string | null
