@@ -33,6 +33,8 @@ import {
   ChevronDown,
   UserPlus,
   AlertTriangle,
+  Sliders,
+  Save,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -1442,10 +1444,399 @@ function AutoGenerateTab() {
 }
 
 // =============================================
+// ã¿ã2: ã·ããèª¿æ´ï¼ç¤¾å¡ã»å½¹å¡ï¼
+// =============================================
+const MIN_OFF_DAYS = 5
+
+function ShiftAdjustTab() {
+  const today = useMemo(() => new Date(), [])
+  // Default to the next half-month period that needs adjustment
+  const defaultPeriod = useMemo(() => {
+    const day = today.getDate()
+    const year = today.getFullYear()
+    const month = today.getMonth()
+    // If in first half â show second half of this month; else show first half of next
+    if (day <= 15) {
+      return { year, month, isFirstHalf: false }
+    } else {
+      const d = new Date(year, month + 1, 1)
+      return { year: d.getFullYear(), month: d.getMonth(), isFirstHalf: true }
+    }
+  }, [today])
+
+  const [selectedYear, setSelectedYear] = useState(defaultPeriod.year)
+  const [selectedMonth, setSelectedMonth] = useState(defaultPeriod.month) // 0-indexed
+  const [isFirstHalf, setIsFirstHalf] = useState(defaultPeriod.isFirstHalf)
+  const [offRequests, setOffRequests] = useState<OffRequest[]>([])
+  const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
+  const [configs, setConfigs] = useState<ShiftConfig[]>([])
+  const [fullTimeStaffs, setFullTimeStaffs] = useState<Staff[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msgText, setMsgText] = useState('')
+  const [msgType, setMsgType] = useState<'ok' | 'warn' | 'err'>('ok')
+  // admin-assigned off days: staffId -> Set<'yyyy-MM-dd'>
+  const [assignedOff, setAssignedOff] = useState<Record<number, Set<string>>>({})
+
+  const periodDays = useMemo(() => {
+    const start = new Date(selectedYear, selectedMonth, isFirstHalf ? 1 : 16)
+    const end = isFirstHalf
+      ? new Date(selectedYear, selectedMonth, 15)
+      : new Date(selectedYear, selectedMonth + 1, 0)
+    return eachDayOfInterval({ start, end })
+  }, [selectedYear, selectedMonth, isFirstHalf])
+
+  const periodStart = useMemo(() => format(periodDays[0], 'yyyy-MM-dd'), [periodDays])
+  const periodEnd = useMemo(() => format(periodDays[periodDays.length - 1], 'yyyy-MM-dd'), [periodDays])
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    const [staffRes, offRes, fixedRes, configRes] = await Promise.all([
+      supabase.from('staffs').select('*')
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .in('employment_type', ['ç¤¾å¡', 'å½¹å¡']),
+      supabase.from('off_requests').select('*')
+        .gte('date', periodStart)
+        .lte('date', periodEnd),
+      supabase.from('shifts_fixed').select('*')
+        .gte('date', periodStart)
+        .lte('date', periodEnd),
+      supabase.from('shift_config').select('*'),
+    ])
+    const staffs = (staffRes.data || []).filter((s: Staff) => s.name !== 'ãã£ã')
+    setFullTimeStaffs(staffs)
+    setOffRequests(offRes.data || [])
+    setFixedShifts(fixedRes.data || [])
+    setConfigs(configRes.data || [])
+    setLoading(false)
+  }, [periodStart, periodEnd])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // Reconstruct assignedOff from existing shifts_fixed when data loads
+  useEffect(() => {
+    if (loading) return
+    const newAsgn: Record<number, Set<string>> = {}
+    for (const staff of fullTimeStaffs) {
+      const staffFixed = fixedShifts.filter(f => f.staff_id === staff.id)
+      if (staffFixed.length === 0) continue // not saved yet â all default to work
+      const fixedDates = new Set(staffFixed.map(f => f.date))
+      const reqOffDates = new Set(
+        offRequests.filter(r => r.staff_id === staff.id && r.type === 'ä¼ã¿').map(r => r.date)
+      )
+      const asgnSet = new Set<string>()
+      for (const day of periodDays) {
+        const ds = format(day, 'yyyy-MM-dd')
+        if (!fixedDates.has(ds) && !reqOffDates.has(ds)) asgnSet.add(ds)
+      }
+      if (asgnSet.size > 0) newAsgn[staff.id] = asgnSet
+    }
+    setAssignedOff(newAsgn)
+  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Navigate month
+  const prevMonth = () => {
+    const d = new Date(selectedYear, selectedMonth - 1, 1)
+    setSelectedYear(d.getFullYear()); setSelectedMonth(d.getMonth())
+  }
+  const nextMonth = () => {
+    const d = new Date(selectedYear, selectedMonth + 1, 1)
+    setSelectedYear(d.getFullYear()); setSelectedMonth(d.getMonth())
+  }
+
+  // Cell helpers
+  const getOffReq = (staffId: number, ds: string) =>
+    offRequests.find(r => r.staff_id === staffId && r.date === ds)
+
+  const getCellState = (staffId: number, ds: string): 'work' | 'req-off' | 'limited' | 'asgn-off' => {
+    if (assignedOff[staffId]?.has(ds)) return 'asgn-off'
+    const req = getOffReq(staffId, ds)
+    if (!req) return 'work'
+    return req.type === 'ä¼ã¿' ? 'req-off' : 'limited'
+  }
+
+  const showMsg = (text: string, type: 'ok' | 'warn' | 'err' = 'ok') => {
+    setMsgText(text); setMsgType(type)
+    setTimeout(() => setMsgText(''), 3000)
+  }
+
+  const handleCellClick = (staffId: number, ds: string) => {
+    const state = getCellState(staffId, ds)
+    if (state === 'req-off') {
+      showMsg('å¸æä¼ã¯å¤æ´ã§ãã¾ãã', 'warn'); return
+    }
+    setAssignedOff(prev => {
+      const s = new Set(prev[staffId] || [])
+      state === 'asgn-off' ? s.delete(ds) : s.add(ds)
+      return { ...prev, [staffId]: s }
+    })
+  }
+
+  const getOffCount = (staffId: number) => {
+    const req = offRequests.filter(r => r.staff_id === staffId && r.type === 'ä¼ã¿').length
+    return req + (assignedOff[staffId]?.size || 0)
+  }
+  const getWorkCount = (staffId: number) => periodDays.length - getOffCount(staffId)
+  const getNeedOff = (staffId: number) => Math.max(0, MIN_OFF_DAYS - getOffCount(staffId))
+
+  const handleSave = async () => {
+    const unmet = fullTimeStaffs.filter(s => getNeedOff(s.id) > 0)
+    if (unmet.length > 0) {
+      const names = unmet.map(s => s.name).join('ã')
+      const ok = window.confirm(`${names} ã®ä¼ã¿ãã¾ã ${MIN_OFF_DAYS}æ¥ã«éãã¦ãã¾ããã\nãã®ã¾ã¾ä¿å­ãã¾ããï¼`)
+      if (!ok) return
+    }
+    setSaving(true)
+    try {
+      const staffIds = fullTimeStaffs.map(s => s.id)
+      // Delete all existing shifts_fixed for ç¤¾å¡/å½¹å¡ in this period
+      await supabase.from('shifts_fixed')
+        .delete()
+        .in('staff_id', staffIds)
+        .gte('date', periodStart)
+        .lte('date', periodEnd)
+
+      const shimeCfg = configs.find(c => c.type === 'ä»è¾¼ã¿')
+      const eigCfg = configs.find(c => c.type === 'å¶æ¥­')
+      const toInsert: Omit<ShiftFixed, 'id' | 'created_at'>[] = []
+
+      for (const staff of fullTimeStaffs) {
+        for (const day of periodDays) {
+          const ds = format(day, 'yyyy-MM-dd')
+          const state = getCellState(staff.id, ds)
+          if (state === 'req-off' || state === 'asgn-off') continue
+
+          const offReq = getOffReq(staff.id, ds)
+          const isShimeOnly = offReq?.type === 'ä»è¾¼ã¿ã®ã¿'
+          const isEigOnly = offReq?.type === 'å¶æ¥­ã®ã¿'
+
+          if (!isEigOnly) {
+            toInsert.push({
+              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: 'ä»è¾¼ã¿',
+              start_time: shimeCfg?.default_start_time ?? '14:00:00',
+              end_time: shimeCfg?.default_end_time ?? '17:00:00',
+            })
+          }
+          if (!isShimeOnly) {
+            toInsert.push({
+              date: ds, shop_id: staff.shop_id, staff_id: staff.id, type: 'å¶æ¥­',
+              start_time: eigCfg?.default_start_time ?? '17:00:00',
+              end_time: eigCfg?.default_end_time ?? '24:00:00',
+            })
+          }
+        }
+      }
+
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from('shifts_fixed').insert(toInsert)
+        if (error) throw error
+      }
+      showMsg(`ä¿å­ãã¾ããï¼${Math.ceil(toInsert.length / 2)}æ¥åã®ã·ãããç¢ºåï¼`)
+      await fetchData()
+    } catch (e) {
+      console.error(e)
+      showMsg('ã¨ã©ã¼ãçºçãã¾ãã', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const DAY_NAMES = ['æ¥', 'æ', 'ç«', 'æ°´', 'æ¨', 'é', 'å']
+  const periodLabel = `${selectedMonth + 1}æ${isFirstHalf ? 'åå' : 'å¾å'}`
+  const okCount = fullTimeStaffs.filter(s => getNeedOff(s.id) === 0).length
+
+  return (
+    <div className="space-y-3">
+      {/* Message */}
+      {msgText && (
+        <div className={`px-3 py-2 rounded-lg text-sm font-medium ${
+          msgType === 'ok' ? 'bg-emerald-50 text-emerald-700' :
+          msgType === 'warn' ? 'bg-amber-50 text-amber-700' :
+          'bg-red-50 text-red-700'
+        }`}>{msgText}</div>
+      )}
+
+      {/* Rule reminder */}
+      <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 leading-relaxed">
+        <span className="font-bold">ã«ã¼ã«ï¼</span>
+        ç¤¾å¡ã»å½¹å¡ã¯åæã«ã¤ãæä½ <span className="font-bold">5æ¥ã®ä¼ã¿</span> ãå¿è¦ã§ãã
+        ð¸å¸æä¼ã¯å¤æ´ä¸å¯ãæ°´è²ã®å²ãå½ã¦ä¼ã¯åºå¤æ¥ãã¯ãªãã¯ãã¦è¿½å ã§ãã¾ãã
+      </div>
+
+      {/* Period selector */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center flex-1 bg-muted/40 rounded-xl px-2 py-1.5">
+          <button onClick={prevMonth} className="p-1 hover:bg-white rounded-lg transition-colors">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-semibold flex-1 text-center">{selectedYear}å¹´{periodLabel}</span>
+          <button onClick={nextMonth} className="p-1 hover:bg-white rounded-lg transition-colors">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        {/* åå/å¾å toggle */}
+        <div className="flex rounded-xl overflow-hidden border border-border bg-muted/30 flex-shrink-0">
+          <button
+            onClick={() => setIsFirstHalf(true)}
+            className={`px-3 py-1.5 text-xs font-semibold transition-colors ${isFirstHalf ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:bg-muted/60'}`}
+          >åå</button>
+          <button
+            onClick={() => setIsFirstHalf(false)}
+            className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!isFirstHalf ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:bg-muted/60'}`}
+          >å¾å</button>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-indigo-500" /><span>åºå¤ï¼ã¯ãªãã¯âå²ãå½ã¦ä¼ï¼</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-pink-100 border border-pink-300" /><span>å¸æä¼ã»æ¬äººç³è«ï¼å¤æ´ä¸å¯ï¼</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-sky-50 border border-sky-300 border-dashed" /><span>å²ãå½ã¦ä¼ï¼ã¯ãªãã¯âåºå¤ã«æ»ãï¼</span></div>
+        <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" /><span>éå®åºå¤ï¼ä»è¾¼/å¶æ¥­ã®ã¿ï¼</span></div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : fullTimeStaffs.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">ç¤¾å¡ã»å½¹å¡ã®ã¹ã¿ãããè¦ã¤ããã¾ãã</p>
+      ) : (
+        <>
+          {/* Scrollable grid */}
+          <div className="overflow-x-auto rounded-xl border border-border/70">
+            <div style={{ minWidth: `${132 + periodDays.length * 36 + 136}px` }}>
+              {/* Header */}
+              <div className="flex items-end gap-1 bg-muted/40 px-2 py-1.5 border-b border-border/50">
+                <div style={{ width: 132, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">ã¹ã¿ãã</div>
+                {periodDays.map(day => {
+                  const ds = format(day, 'yyyy-MM-dd')
+                  const dow = getDay(day)
+                  const wknd = dow === 0 || dow === 6
+                  return (
+                    <div key={ds} style={{ width: 34, flexShrink: 0, textAlign: 'center' }}>
+                      <div className={`text-[10px] font-bold ${wknd ? 'text-red-500' : 'text-slate-500'}`}>{format(day, 'd')}</div>
+                      <div className={`text-[8px] ${wknd ? 'text-red-400 font-semibold' : 'text-slate-400'}`}>{DAY_NAMES[dow]}</div>
+                    </div>
+                  )
+                })}
+                <div style={{ width: 136, flexShrink: 0 }} className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide pl-2">ç¶æ³</div>
+              </div>
+
+              {/* Staff rows */}
+              {fullTimeStaffs.map((staff, idx) => {
+                const offCount = getOffCount(staff.id)
+                const workCount = getWorkCount(staff.id)
+                const needOff = getNeedOff(staff.id)
+                const ok = needOff === 0
+                const reqOffCount = offRequests.filter(r => r.staff_id === staff.id && r.type === 'ä¼ã¿').length
+                const asgnOffCount = assignedOff[staff.id]?.size || 0
+                return (
+                  <div
+                    key={staff.id}
+                    className={`flex items-center gap-1 px-2 py-2 border-b border-border/30 last:border-0 ${idx % 2 !== 0 ? 'bg-muted/15' : ''}`}
+                  >
+                    {/* Name */}
+                    <div style={{ width: 132, flexShrink: 0 }}>
+                      <div className="text-xs font-semibold text-foreground truncate">{staff.name}</div>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                        staff.employment_type === 'å½¹å¡' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
+                      }`}>{staff.employment_type}</span>
+                    </div>
+
+                    {/* Day cells */}
+                    {periodDays.map(day => {
+                      const ds = format(day, 'yyyy-MM-dd')
+                      const state = getCellState(staff.id, ds)
+                      const offReq = getOffReq(staff.id, ds)
+                      let bg = '', label = ''
+                      switch (state) {
+                        case 'work':
+                          bg = 'bg-indigo-500 hover:bg-indigo-600 text-white cursor-pointer'
+                          label = 'åº'; break
+                        case 'req-off':
+                          bg = 'bg-pink-100 text-pink-700 border border-pink-300 cursor-not-allowed'
+                          label = 'ä¼'; break
+                        case 'limited':
+                          bg = 'bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200 cursor-pointer'
+                          label = offReq?.type === 'ä»è¾¼ã¿ã®ã¿' ? 'ä»' : 'å¶'; break
+                        case 'asgn-off':
+                          bg = 'bg-sky-50 text-sky-600 border border-dashed border-sky-300 hover:bg-sky-100 cursor-pointer'
+                          label = 'ä¼'; break
+                      }
+                      return (
+                        <div
+                          key={ds}
+                          style={{ width: 34, height: 34, flexShrink: 0, position: 'relative' }}
+                          className={`rounded-lg flex items-center justify-center text-[11px] font-bold select-none transition-colors ${bg}`}
+                          onClick={() => handleCellClick(staff.id, ds)}
+                          title={`${format(day, 'M/d')} ${DAY_NAMES[getDay(day)]}ï½${
+                            state === 'work' ? 'åºå¤ â ã¯ãªãã¯ã§å²ãå½ã¦ä¼' :
+                            state === 'req-off' ? 'ð¸ å¸æä¼ï¼å¤æ´ä¸å¯ï¼' :
+                            state === 'limited' ? `éå®åºå¤ï¼${offReq?.type}ï¼` :
+                            'å²ãå½ã¦ä¼ â ã¯ãªãã¯ã§åºå¤ã«æ»ã'
+                          }`}
+                        >
+                          {state === 'req-off' ? (
+                            <>
+                              {label}
+                              <div style={{ position: 'absolute', top: 2, right: 2, width: 5, height: 5, borderRadius: '50%', background: '#ec4899' }} />
+                            </>
+                          ) : label}
+                        </div>
+                      )
+                    })}
+
+                    {/* Status */}
+                    <div style={{ width: 136, flexShrink: 0 }} className="pl-2 space-y-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {workCount}åº/{reqOffCount}å¸+{asgnOffCount}ä»
+                        </span>
+                        {ok ? (
+                          <span className="text-[10px] font-bold text-emerald-600 px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 whitespace-nowrap">OK</span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-rose-600 px-1.5 py-0.5 rounded-md bg-rose-50 border border-rose-200 whitespace-nowrap">ãã¨{needOff}æ¥</span>
+                        )}
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${ok ? 'bg-emerald-500' : needOff >= 3 ? 'bg-rose-500' : 'bg-amber-500'}`}
+                          style={{ width: `${Math.min(100, Math.round((workCount / periodDays.length) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Summary + Save */}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-muted-foreground">
+              {okCount}/{fullTimeStaffs.length}å æ¡ä»¶ã¯ãªã¢
+            </span>
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              ã·ãããç¢ºå®ã»ä¿å­
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+// =============================================
 // メインページ
 // =============================================
 
-type ManageTab = 'confirm' | 'rules' | 'auto'
+type ManageTab = 'confirm' | 'rules' | 'auto' | 'adjust'
 
 export default function ManagePage() {
   const router = useRouter()
@@ -1490,11 +1881,20 @@ export default function ManagePage() {
           <Wand2 className="h-4 w-4" />
           自動生成
         </button>
+        <button onClick={() => setActiveTab('adjust')}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+            activeTab === 'adjust' ? 'bg-zinc-900 text-white' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+          }`}
+        >
+          <Sliders className="h-4 w-4" />
+          シフト調整
+        </button>
       </div>
 
       {activeTab === 'confirm' && <ShiftConfirmTab />}
       {activeTab === 'rules' && <RulesTab />}
       {activeTab === 'auto' && <AutoGenerateTab />}
+      {activeTab === 'adjust' && <ShiftAdjustTab />}
     </div>
   )
 }
