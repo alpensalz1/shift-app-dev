@@ -1256,7 +1256,14 @@ function ShiftAdjustTab() {
     const nextIdx = (currentIdx + 1) % activeShops.length
     const nextShop = activeShops[nextIdx]
 
-    if (state === 'work' && nextIdx === 0 && currentIdx !== 0) {
+    // 「全店舗を一周した」かどうかの判定:
+    // 次の店舗がこのスタッフのデフォルト店舗に戻る、かつ
+    // 既に明示的に店舗を切り替えた実績がある（cellShops override が存在する）場合のみ作業日へ。
+    // これにより、デフォルトが下北沢のスタッフでも最初のタップで三軒茶屋を選べる。
+    const naturalDefaultShopId = staffDefaultShops[staffId] ?? unruledDefault[staffId] ?? defaultShopId
+    const hasExplicitOverride = cellShops[staffId]?.[ds] !== undefined
+
+    if (state === 'work' && nextShop.id === naturalDefaultShopId && hasExplicitOverride) {
       // 全店舗を一周 → 作業日へ
       setTaskDays(prev => {
         const s = new Set(prev[staffId] || [])
