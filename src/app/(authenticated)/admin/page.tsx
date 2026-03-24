@@ -14,10 +14,10 @@ import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Plus,
   DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase, RefreshCw,
-  ClipboardList, XCircle, Trash2, RotateCcw
+  ClipboardList, XCircle, Trash2, RotateCcw, Gift
 } from 'lucide-react'
 
-type Tab = 'labor' | 'staff' | 'closed' | 'report' | 'submission'
+type Tab = 'labor' | 'staff' | 'closed' | 'report' | 'submission' | 'bonus'
 
 interface WageHistory {
   id: number
@@ -83,6 +83,7 @@ export default function AdminPage() {
     { key: 'staff', label: 'スタッフ', icon: Users },
     { key: 'closed', label: '休業日', icon: CalendarOff },
     { key: 'report', label: 'レポート', icon: FileText },
+    ...(!isSystemAdmin ? [{ key: 'bonus' as Tab, label: 'ボーナス', icon: Gift }] : []),
   ]
 
   const changeMonth = (delta: number) => {
@@ -126,7 +127,7 @@ export default function AdminPage() {
       </div>
 
       {/* Month selector */}
-      {['labor', 'report'].includes(tab) && (
+      {['labor', 'report', 'bonus'].includes(tab) && (
         <div className="flex items-center justify-between bg-muted/40 rounded-2xl px-2 py-1.5">
           <button
             onClick={() => changeMonth(-1)}
@@ -149,6 +150,7 @@ export default function AdminPage() {
       {tab === 'staff' && <StaffManagementTab isSystemAdmin={isSystemAdmin} isAuthorized={isAuthorized} />}
       {tab === 'closed' && <ClosedDatesTab />}
       {tab === 'report' && <MonthlyReportTab month={month} />}
+      {tab === 'bonus' && !isSystemAdmin && <BonusTab month={month} />}
     </div>
   )
 }
@@ -1317,6 +1319,163 @@ function SubmissionStatusTab() {
           <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           更新
         </button>
+      )}
+    </div>
+  )
+}
+
+/* ── ボーナスタブ（社員・役員のみ表示） ── */
+function BonusTab({ month }: { month: string }) {
+  const [staffs, setStaffs] = useState<Staff[]>([])
+  const [shifts, setShifts] = useState<ShiftFixed[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    const [y, m] = month.split('-').map(Number)
+    const startDate = `${month}-01`
+    const endDate = `${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`
+    Promise.all([
+      supabase.from('staffs').select('*').in('employment_type', ['社員', '役員']).is('deleted_at', null).order('id'),
+      supabase.from('shifts_fixed').select('*').gte('date', startDate).lte('date', endDate),
+    ]).then(([sR, shR]) => {
+      if (cancelled) return
+      if (sR.error) console.error('staffs取得失敗:', sR.error.message)
+      else setStaffs(sR.data || [])
+      if (shR.error) console.error('shifts_fixed取得失敗:', shR.error.message)
+      else setShifts(shR.data || [])
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [month])
+
+  const toMin = (t: string) => {
+    const parts = t.split(':')
+    return parseInt(parts[0]) * 60 + parseInt(parts[1] || '0')
+  }
+
+  const fmtMin = (min: number) => {
+    const h = Math.floor(min / 60)
+    const mm = min % 60
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  }
+
+  const bonusData = useMemo(() => staffs.map(s => {
+    const myShifts = shifts.filter(sh => sh.staff_id === s.id)
+    const byDate = new Map<string, ShiftFixed[]>()
+    myShifts.forEach(sh => {
+      const d = sh.date.substring(0, 10)
+      if (!byDate.has(d)) byDate.set(d, [])
+      byDate.get(d)!.push(sh)
+    })
+
+    const days: { date: string; bonusDays: number; startMin: number; endMin: number }[] = []
+    byDate.forEach((dayShifts, date) => {
+      const startMin = Math.min(...dayShifts.map(sh => toMin(sh.start_time)))
+      const endMin = Math.max(...dayShifts.map(sh => toMin(sh.end_time || '24:00:00')))
+      // 判定: 開始 ≤ 14:00 かつ 終了 ≥ 23:00 → 1日 / それ以外 → 0.5日
+      const bonusDays = startMin <= 14 * 60 && endMin >= 23 * 60 ? 1 : 0.5
+      days.push({ date, bonusDays, startMin, endMin })
+    })
+    days.sort((a, b) => a.date.localeCompare(b.date))
+    const total = days.reduce((sum, d) => sum + d.bonusDays, 0)
+    return { staff: s, days, total }
+  }), [staffs, shifts])
+
+  const [y, m] = month.split('-').map(Number)
+  const ml = `${y}年${m}月`
+  const DOW_JP = ['日', '月', '火', '水', '木', '金', '土']
+
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="skeleton h-16 w-full" />
+      <div className="skeleton h-40 w-full" />
+    </div>
+  )
+
+  const grandTotal = bonusData.reduce((sum, d) => sum + d.total, 0)
+
+  return (
+    <div className="space-y-3 animate-fade-in">
+      {/* サマリーカード */}
+      <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/50 p-4 ring-1 ring-amber-100/50">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-6 h-6 rounded-lg bg-amber-500/10 flex items-center justify-center">
+            <Gift className="h-3.5 w-3.5 text-amber-600" />
+          </div>
+          <span className="text-xs text-amber-700/70 font-medium">社員・役員 ボーナス該当日数（{ml}）</span>
+        </div>
+        <p className="text-2xl font-extrabold text-amber-900 tabular-nums">
+          {grandTotal.toFixed(1)}<span className="text-sm font-medium ml-1">日分</span>
+        </p>
+        <p className="text-[10px] text-amber-600/60 mt-1">判定: 開始≤14:00 かつ 終了≥23:00 → 1日 / それ以外 → 0.5日</p>
+      </div>
+
+      {/* スタッフ別内訳 */}
+      {bonusData.map(({ staff, days, total }) => (
+        <div key={staff.id} className="rounded-xl bg-white ring-1 ring-border/40 overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/30 transition-colors"
+            onClick={() => setExpandedId(expandedId === staff.id ? null : staff.id)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-semibold">{staff.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${staff.employment_type === '役員' ? 'bg-amber-100/80 text-amber-700' : 'bg-zinc-200/60 text-zinc-600'}`}>
+                {staff.employment_type}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-extrabold tabular-nums ${total > 0 ? 'text-amber-700' : 'text-muted-foreground'}`}>
+                {total.toFixed(1)}<span className="text-[10px] font-medium ml-0.5">日</span>
+              </span>
+              {expandedId === staff.id
+                ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              }
+            </div>
+          </button>
+
+          {expandedId === staff.id && (
+            <div className="border-t border-border/30">
+              {days.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground px-3 py-3">この月のシフトなし</p>
+              ) : (
+                <div className="divide-y divide-border/20">
+                  {days.map(({ date, bonusDays, startMin, endMin }) => {
+                    const dow = new Date(date + 'T00:00:00').getDay()
+                    const [, mm, dd] = date.split('-')
+                    const is1 = bonusDays === 1
+                    return (
+                      <div key={date} className="flex items-center justify-between px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[11px] font-medium tabular-nums w-[52px] ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : ''}`}>
+                            {mm}/{dd}({DOW_JP[dow]})
+                          </span>
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {fmtMin(startMin)}–{fmtMin(endMin)}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${is1 ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                          {is1 ? '1.0日' : '0.5日'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="px-3 py-2 bg-muted/20 flex justify-between items-center border-t border-border/30">
+                <span className="text-[10px] text-muted-foreground font-medium">小計</span>
+                <span className="text-sm font-extrabold tabular-nums text-amber-700">{total.toFixed(1)} 日</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {bonusData.every(d => d.days.length === 0) && (
+        <p className="text-center text-xs text-muted-foreground py-8">この月の確定シフトがありません</p>
       )}
     </div>
   )
