@@ -42,7 +42,8 @@ interface RequestWithStaff extends ShiftRequest {
 
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
-const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
+const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢', 3: 'おにぎり' }
+const ONIGIRI_SHOP_ID = 3
 
 // =============================================
 // タブ1: シフト確定（既存機能）
@@ -1238,7 +1239,10 @@ function ShiftAdjustTab() {
     }
 
     // work or limited → 店舗サイクル（全店舗を一周したら作業日 → 割当休）
-    const activeShops = shops.filter(sh => sh.is_active !== false)
+    // おにぎりは土日のみ表示（平日はサイクルから除外）
+    const dow = new Date(ds + 'T00:00:00').getDay()
+    const isWeekend = dow === 0 || dow === 6
+    const activeShops = shops.filter(sh => sh.is_active !== false && (sh.id !== ONIGIRI_SHOP_ID || isWeekend))
     if (activeShops.length < 2) {
       // 店舗が1つの場合: work → 作業日 → 割当休 → work
       if (state === 'work') {
@@ -1339,6 +1343,16 @@ function ShiftAdjustTab() {
 
           // Use per-cell shop if set, otherwise fall back to staff's default
           const shopId = getCellShopId(staff.id, ds, staff.shop_id)
+
+          // おにぎり: 12:00-18:00固定・営業1レコードのみ
+          if (shopId === ONIGIRI_SHOP_ID) {
+            toInsert.push({
+              date: ds, shop_id: shopId, staff_id: staff.id, type: '営業',
+              start_time: '12:00:00', end_time: '18:00:00',
+            })
+            continue
+          }
+
           const shimeCfg = configs.find(c => c.shop_id === shopId && c.type === '仕込み')
             ?? configs.find(c => c.type === '仕込み')
           const eigCfg = configs.find(c => c.shop_id === shopId && c.type === '営業')
@@ -1369,7 +1383,8 @@ function ShiftAdjustTab() {
         const { error } = await supabase.from('shifts_fixed').insert(toInsert)
         if (error) throw error
       }
-      showMsg(`保存しました（${Math.ceil(toInsert.length / 2)}日分のシフトを確定）`)
+      const savedDays = new Set(toInsert.map(r => `${r.staff_id}_${r.date}`)).size
+      showMsg(`保存しました（${savedDays}日分のシフトを確定）`)
       await fetchData()
     } catch (e) {
       console.error(e)

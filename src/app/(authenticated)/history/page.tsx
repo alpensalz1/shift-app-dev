@@ -23,7 +23,7 @@ import {
 
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
-const SHOPS: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢' }
+const SHOPS: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢', 3: 'おにぎり' }
 
 function fmtKey(d: Date) {
   return format(d, 'yyyy-MM-dd')

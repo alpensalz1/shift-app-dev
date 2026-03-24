@@ -13,6 +13,7 @@ import { ja } from 'date-fns/locale'
 const SHOPS = [
   { id: 1, name: '三軒茶屋' },
   { id: 2, name: '下北沢' },
+  { id: 3, name: 'おにぎり' },
 ]
 
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -31,6 +32,13 @@ const COLORS: Record<number, { card: string; border: string; icon: string; badge
     icon: 'text-violet-600',
     badge: 'bg-violet-100/80 text-violet-700',
     highlight: 'bg-violet-500',
+  },
+  3: {
+    card: 'bg-gradient-to-br from-rose-50/80 to-pink-50/40',
+    border: 'border-l-[3px] border-l-rose-400',
+    icon: 'text-rose-600',
+    badge: 'bg-rose-100/80 text-rose-700',
+    highlight: 'bg-rose-500',
   },
 }
 
