@@ -43,6 +43,19 @@ interface RequestWithStaff extends ShiftRequest {
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢', 3: 'おにぎり' }
+const SHOP_SHORT: Record<number, string> = { 1: '三茶', 2: '下北', 3: 'おに' }
+// 店舗カラー（バッジ用・淡色）
+const SHOP_BADGE: Record<number, string> = {
+  1: 'bg-indigo-100 text-indigo-800',
+  2: 'bg-teal-100 text-teal-800',
+  3: 'bg-violet-100 text-violet-800',
+}
+// 店舗カラー（ボタン用・濃色）
+const SHOP_BTN: Record<number, string> = {
+  1: 'bg-indigo-600 hover:bg-indigo-700',
+  2: 'bg-teal-600 hover:bg-teal-700',
+  3: 'bg-violet-600 hover:bg-violet-700',
+}
 
 // =============================================
 // タブ1: シフト確定（既存機能）
@@ -650,8 +663,12 @@ function ShiftConfirmTab() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{staffName}</span>
                           <span className="text-xs text-muted-foreground">{formatTime(f.start_time)}–{formatTime(f.end_time)}</span>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>{f.type}</span>
-                          <span className="text-xs text-muted-foreground">{f.shop_id === 1 ? '三茶' : '下北'}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{f.type}</span>
+                          {f.shop_id != null && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SHOP_BADGE[f.shop_id] ?? 'bg-zinc-100 text-zinc-700'}`}>
+                              {SHOP_SHORT[f.shop_id] ?? SHOP_NAMES[f.shop_id]}
+                            </span>
+                          )}
                         </div>
                         <button onClick={() => { if (window.confirm('このシフトを取り消しますか？')) handleRemoveFixed(f.id) }} disabled={confirming}
                           className="p-1 text-muted-foreground hover:text-destructive transition-colors">
@@ -686,14 +703,14 @@ function ShiftConfirmTab() {
                       <button
                         onClick={() => handleBatchConfirm(1)}
                         disabled={confirming}
-                        className="flex-1 h-8 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 transition-colors press-effect"
+                        className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[1]}`}
                       >
                         未処理を全員 三茶で確定（{pendingCount}件）
                       </button>
                       <button
                         onClick={() => handleBatchConfirm(2)}
                         disabled={confirming}
-                        className="flex-1 h-8 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 transition-colors press-effect"
+                        className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[2]}`}
                       >
                         未処理を全員 下北で確定（{pendingCount}件）
                       </button>
@@ -731,11 +748,17 @@ function ShiftConfirmTab() {
                         </div>
                         {/* 確定済みシフトの詳細表示 */}
                         {fixedForStaff.length > 0 && (
-                          <div className="text-xs text-emerald-700 mb-2 flex flex-wrap gap-1">
+                          <div className="text-xs mb-2 flex flex-wrap gap-1">
                             {fixedForStaff.map(f => (
-                              <span key={f.id} className="inline-flex items-center gap-0.5 bg-emerald-100 rounded-full px-2 py-0.5">
-                                <Check className="h-2.5 w-2.5" />
-                                {f.shop_id != null ? SHOP_NAMES[f.shop_id] : ''} {f.type} {formatTime(f.start_time)}–{formatTime(f.end_time)}
+                              <span key={f.id} className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                                <Check className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                                {f.shop_id != null && (
+                                  <span className={`text-[10px] px-1 rounded font-medium ${SHOP_BADGE[f.shop_id] ?? 'bg-zinc-100 text-zinc-700'}`}>
+                                    {SHOP_SHORT[f.shop_id] ?? SHOP_NAMES[f.shop_id]}
+                                  </span>
+                                )}
+                                <span className={`text-[10px] px-1 rounded font-medium ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{f.type}</span>
+                                <span className="text-[10px] text-muted-foreground">{formatTime(f.start_time)}–{formatTime(f.end_time)}</span>
                               </span>
                             ))}
                           </div>
@@ -748,8 +771,8 @@ function ShiftConfirmTab() {
                             {req.type === '仕込み・営業' ? (
                               <>
                                 <div className="flex gap-2">
-                                  <Button size="sm" className="flex-1 h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
-                                  <Button size="sm" className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
+                                  <Button size="sm" className={`flex-1 h-8 text-xs text-white ${SHOP_BTN[1]}`} disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
+                                  <Button size="sm" className={`flex-1 h-8 text-xs text-white ${SHOP_BTN[2]}`} disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
                                   <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
                                 </div>
                                 <button
@@ -761,16 +784,16 @@ function ShiftConfirmTab() {
                                 {isExpanded && (
                                   <div className="flex gap-1.5 flex-wrap pt-0.5">
                                     {canAssignShiftType(req.start_time, req.end_time, 1, '仕込み', configs) && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                      <Button size="sm" variant="outline" className={`h-7 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50`} disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
                                     )}
                                     {canAssignShiftType(req.start_time, req.end_time, 2, '仕込み', configs) && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                      <Button size="sm" variant="outline" className={`h-7 text-xs border-teal-300 text-teal-700 hover:bg-teal-50`} disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
                                     )}
                                     {canAssignShiftType(req.start_time, req.end_time, 1, '営業', configs) && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                      <Button size="sm" variant="outline" className={`h-7 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50`} disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
                                     )}
                                     {canAssignShiftType(req.start_time, req.end_time, 2, '営業', configs) && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                      <Button size="sm" variant="outline" className={`h-7 text-xs border-teal-300 text-teal-700 hover:bg-teal-50`} disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
                                     )}
                                   </div>
                                 )}
@@ -781,20 +804,20 @@ function ShiftConfirmTab() {
                                 {(req.type === '仕込み') && (
                                   <>
                                     {canAssignShiftType(req.start_time, req.end_time, 1, '仕込み', configs) && (
-                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
+                                      <Button size="sm" variant="outline" className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" disabled={confirming} onClick={() => handleConfirm(req, 1, '仕込み')}>三茶 仕込み</Button>
                                     )}
                                     {canAssignShiftType(req.start_time, req.end_time, 2, '仕込み', configs) && (
-                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
+                                      <Button size="sm" variant="outline" className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" disabled={confirming} onClick={() => handleConfirm(req, 2, '仕込み')}>下北 仕込み</Button>
                                     )}
                                   </>
                                 )}
                                 {(req.type === '営業') && (
                                   <>
                                     {canAssignShiftType(req.start_time, req.end_time, 1, '営業', configs) && (
-                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
+                                      <Button size="sm" variant="outline" className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" disabled={confirming} onClick={() => handleConfirm(req, 1, '営業')}>三茶 営業</Button>
                                     )}
                                     {canAssignShiftType(req.start_time, req.end_time, 2, '営業', configs) && (
-                                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
+                                      <Button size="sm" variant="outline" className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
                                     )}
                                   </>
                                 )}

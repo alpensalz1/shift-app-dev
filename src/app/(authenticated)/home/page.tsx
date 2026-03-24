@@ -20,25 +20,28 @@ const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 const COLORS: Record<number, { card: string; border: string; icon: string; badge: string; highlight: string }> = {
   1: {
-    card: 'bg-gradient-to-br from-amber-50/80 to-orange-50/40',
-    border: 'border-l-[3px] border-l-amber-400',
-    icon: 'text-amber-600',
-    badge: 'bg-amber-100/80 text-amber-700',
-    highlight: 'bg-amber-500',
+    // 三軒茶屋: indigo（manageページと統一）
+    card: 'bg-gradient-to-br from-indigo-50/80 to-blue-50/40',
+    border: 'border-l-[3px] border-l-indigo-400',
+    icon: 'text-indigo-600',
+    badge: 'bg-indigo-100/80 text-indigo-700',
+    highlight: 'bg-indigo-500',
   },
   2: {
+    // 下北沢: teal（manageページと統一）
+    card: 'bg-gradient-to-br from-teal-50/80 to-emerald-50/40',
+    border: 'border-l-[3px] border-l-teal-400',
+    icon: 'text-teal-600',
+    badge: 'bg-teal-100/80 text-teal-700',
+    highlight: 'bg-teal-500',
+  },
+  3: {
+    // おにぎり: violet（manageページと統一）
     card: 'bg-gradient-to-br from-violet-50/80 to-purple-50/40',
     border: 'border-l-[3px] border-l-violet-400',
     icon: 'text-violet-600',
     badge: 'bg-violet-100/80 text-violet-700',
     highlight: 'bg-violet-500',
-  },
-  3: {
-    card: 'bg-gradient-to-br from-rose-50/80 to-pink-50/40',
-    border: 'border-l-[3px] border-l-rose-400',
-    icon: 'text-rose-600',
-    badge: 'bg-rose-100/80 text-rose-700',
-    highlight: 'bg-rose-500',
   },
 }
 
