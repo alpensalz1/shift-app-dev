@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Sliders,
   Save,
+  Pencil,
 } from 'lucide-react'
 
 interface RequestWithStaff extends ShiftRequest {
@@ -128,6 +129,10 @@ function ShiftConfirmTab() {
   const [offRequests, setOffRequests] = useState<OffRequest[]>([])
   const [addStaffModal, setAddStaffModal] = useState<{ shopId: number; type: '仕込み' | '営業' } | null>(null)
   const [addingStaff, setAddingStaff] = useState(false)
+  // 確定済みシフトのインライン時間編集
+  const [editingFixed, setEditingFixed] = useState<{ id: number; start: string; end: string } | null>(null)
+  // 社員追加モーダルの時間オーバーライド
+  const [addStaffTimeOverride, setAddStaffTimeOverride] = useState<{ start: string; end: string } | null>(null)
   const autoAdvancedRef = useRef(false)
   // 月切替時のfetch競合を防ぐためのバージョン管理（古い月のfetchが新しい月のデータを上書きしないよう）
   const fetchVersionRef = useRef(0)
@@ -330,6 +335,23 @@ function ShiftConfirmTab() {
     }
   }
 
+  const handleEditFixed = async (id: number, start: string, end: string) => {
+    if (!start || !end || confirming) return
+    // HH:MM → HH:MM:00 に正規化して保存
+    const norm = (t: string) => t.length === 5 ? t + ':00' : t
+    setConfirming(true)
+    try {
+      const { error } = await supabase.from('shifts_fixed').update({
+        start_time: norm(start),
+        end_time: norm(end),
+      }).eq('id', id)
+      if (error) { setMessage('時間更新に失敗: ' + error.message) }
+      else { setMessage('シフト時間を更新しました'); setEditingFixed(null); fetchAll() }
+    } finally {
+      setConfirming(false)
+    }
+  }
+
   const handleReject = async (req: RequestWithStaff) => {
     setConfirming(true)
     try {
@@ -405,19 +427,28 @@ function ShiftConfirmTab() {
     }
   }
 
-  // 社員・役員をシフト確定に直接追加（店舗デフォルト時間で挿入）
+  // 社員・役員をシフト確定に直接追加（時間オーバーライドに対応）
   const handleAddStaff = async (staffId: number) => {
     if (!addStaffModal || !selectedDate) return
     const { shopId, type } = addStaffModal
     const cfg = configs.find((c) => c.shop_id === shopId && c.type === type)
     if (!cfg) { setMessage('店舗設定が見つかりません'); return }
     setAddingStaff(true)
-    // 下北沢の仕込みは土日・祝日のみ11:00スタート（三軒茶屋はデフォルト時間を使用）
-    const dateObj = new Date(selectedDate + 'T00:00:00')
-    const startTime =
-      shopId === 2 && type === '仕込み' && isWeekendOrHoliday(dateObj)
+    // 時間オーバーライドがあればそれを使う、なければデフォルト判定
+    const norm = (t: string) => t.length === 5 ? t + ':00' : t
+    let startTime: string
+    let endTime: string
+    if (addStaffTimeOverride) {
+      startTime = norm(addStaffTimeOverride.start)
+      endTime = norm(addStaffTimeOverride.end)
+    } else {
+      // 下北沢の仕込みは土日・祝日のみ11:00スタート（三軒茶屋はデフォルト時間を使用）
+      const dateObj = new Date(selectedDate + 'T00:00:00')
+      startTime = shopId === 2 && type === '仕込み' && isWeekendOrHoliday(dateObj)
         ? '11:00:00'
         : cfg.default_start_time
+      endTime = cfg.default_end_time
+    }
     try {
       const { error } = await supabase.from('shifts_fixed').insert({
         date: selectedDate,
@@ -425,13 +456,14 @@ function ShiftConfirmTab() {
         type,
         staff_id: staffId,
         start_time: startTime,
-        end_time: cfg.default_end_time,
+        end_time: endTime,
       })
       if (error) { setMessage('追加に失敗: ' + error.message) }
       else {
         const staffName = allStaffs.find((s) => s.id === staffId)?.name || ''
         setMessage(`${staffName}を${SHOP_NAMES[shopId]} ${type}に追加しました`)
         setAddStaffModal(null)
+        setAddStaffTimeOverride(null)
         fetchAll()
       }
     } finally {
@@ -637,7 +669,19 @@ function ShiftConfirmTab() {
                         </div>
                       )}
                       <button
-                        onClick={() => setAddStaffModal({ shopId: s.shopId, type: s.type as '仕込み' | '営業' })}
+                        onClick={() => {
+                          const shopId = s.shopId
+                          const type = s.type as '仕込み' | '営業'
+                          const cfg = configs.find(c => c.shop_id === shopId && c.type === type)
+                          setAddStaffModal({ shopId, type })
+                          if (cfg && selectedDate) {
+                            const dateObj = new Date(selectedDate + 'T00:00:00')
+                            const defaultStart = shopId === 2 && type === '仕込み' && isWeekendOrHoliday(dateObj)
+                              ? '11:00'
+                              : formatTime(cfg.default_start_time)
+                            setAddStaffTimeOverride({ start: defaultStart, end: formatTime(cfg.default_end_time) })
+                          }
+                        }}
                         disabled={confirming}
                         className="w-full flex items-center justify-center gap-1 h-7 rounded-md border border-dashed border-gray-400 text-gray-600 hover:bg-gray-50 transition-colors text-[11px] font-medium disabled:opacity-50"
                       >
@@ -658,22 +702,78 @@ function ShiftConfirmTab() {
                 <div className="space-y-1.5">
                   {selectedFixed.map((f) => {
                     const staffName = allStaffs.find((s) => s.id === f.staff_id)?.name || '不明'
+                    const isEditing = editingFixed?.id === f.id
                     return (
-                      <div key={f.id} className="flex items-center justify-between py-1.5 px-2 bg-emerald-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{staffName}</span>
-                          <span className="text-xs text-muted-foreground">{formatTime(f.start_time)}–{formatTime(f.end_time)}</span>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{f.type}</span>
-                          {f.shop_id != null && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SHOP_BADGE[f.shop_id] ?? 'bg-zinc-100 text-zinc-700'}`}>
-                              {SHOP_SHORT[f.shop_id] ?? SHOP_NAMES[f.shop_id]}
-                            </span>
-                          )}
-                        </div>
-                        <button onClick={() => { if (window.confirm('このシフトを取り消しますか？')) handleRemoveFixed(f.id) }} disabled={confirming}
-                          className="p-1 text-muted-foreground hover:text-destructive transition-colors">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                      <div key={f.id} className="py-1.5 px-2 bg-emerald-50 rounded-lg">
+                        {isEditing ? (
+                          /* インライン時間編集モード */
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium w-16 shrink-0">{staffName}</span>
+                              <div className="flex items-center gap-1 flex-1">
+                                <input
+                                  type="time"
+                                  value={editingFixed.start}
+                                  onChange={e => setEditingFixed(prev => prev ? { ...prev, start: e.target.value } : null)}
+                                  className="h-7 text-xs border border-border rounded-md px-1.5 flex-1 min-w-0"
+                                />
+                                <span className="text-muted-foreground text-xs">–</span>
+                                <input
+                                  type="time"
+                                  value={editingFixed.end}
+                                  onChange={e => setEditingFixed(prev => prev ? { ...prev, end: e.target.value } : null)}
+                                  className="h-7 text-xs border border-border rounded-md px-1.5 flex-1 min-w-0"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => handleEditFixed(f.id, editingFixed.start, editingFixed.end)}
+                                disabled={confirming}
+                                className="flex-1 h-7 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                              >
+                                保存
+                              </button>
+                              <button
+                                onClick={() => setEditingFixed(null)}
+                                className="h-7 px-3 rounded-md border border-border text-muted-foreground hover:bg-muted text-xs transition-colors"
+                              >
+                                キャンセル
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* 通常表示モード */
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium">{staffName}</span>
+                              <span className="text-xs text-muted-foreground">{formatTime(f.start_time)}–{formatTime(f.end_time)}</span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${f.type === '仕込み' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{f.type}</span>
+                              {f.shop_id != null && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${SHOP_BADGE[f.shop_id] ?? 'bg-zinc-100 text-zinc-700'}`}>
+                                  {SHOP_SHORT[f.shop_id] ?? SHOP_NAMES[f.shop_id]}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                onClick={() => setEditingFixed({ id: f.id, start: formatTime(f.start_time), end: formatTime(f.end_time) })}
+                                disabled={confirming}
+                                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                                title="時間を編集"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={() => { if (window.confirm('このシフトを取り消しますか？')) handleRemoveFixed(f.id) }}
+                                disabled={confirming}
+                                className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-md transition-colors"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -849,18 +949,39 @@ function ShiftConfirmTab() {
                 !alreadyFixedStaffIds.has(s.id)
               )
               return (
-                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setAddStaffModal(null)}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => { setAddStaffModal(null); setAddStaffTimeOverride(null) }}>
                   <div className="w-full max-w-sm bg-background rounded-t-2xl p-5 pb-8 space-y-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold">
                         {SHOP_NAMES[addStaffModal.shopId]}・{addStaffModal.type} に追加
                       </h3>
-                      <button onClick={() => setAddStaffModal(null)} className="p-1 text-muted-foreground hover:text-foreground">
+                      <button onClick={() => { setAddStaffModal(null); setAddStaffTimeOverride(null) }} className="p-1 text-muted-foreground hover:text-foreground">
                         <X className="h-4 w-4" />
                       </button>
                     </div>
+                    {/* 時間カスタマイズフィールド */}
+                    {addStaffTimeOverride && (
+                      <div className="rounded-lg bg-muted/40 px-3 py-2.5 space-y-1.5">
+                        <p className="text-[10px] text-muted-foreground font-medium">時間を調整（任意）</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={addStaffTimeOverride.start}
+                            onChange={e => setAddStaffTimeOverride(prev => prev ? { ...prev, start: e.target.value } : null)}
+                            className="h-8 text-xs border border-border rounded-md px-2 flex-1 bg-white"
+                          />
+                          <span className="text-muted-foreground text-xs">–</span>
+                          <input
+                            type="time"
+                            value={addStaffTimeOverride.end}
+                            onChange={e => setAddStaffTimeOverride(prev => prev ? { ...prev, end: e.target.value } : null)}
+                            className="h-8 text-xs border border-border rounded-md px-2 flex-1 bg-white"
+                          />
+                        </div>
+                      </div>
+                    )}
                     <p className="text-[11px] text-muted-foreground">
-                      店舗のデフォルト時間で確定シフトに追加します。休み申請中の方は表示されません。
+                      スタッフを選択すると上記時間でシフトに追加します。休み申請中の方は表示されません。
                     </p>
                     {candidates.length === 0 ? (
                       <p className="text-xs text-muted-foreground text-center py-4">追加できる社員・役員がいません</p>
