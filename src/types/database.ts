@@ -5,6 +5,7 @@ export interface Shop {
   shop_type?: '常設' | 'イベント'
   color?: string
   is_active?: boolean
+  weekend_only?: boolean
 }
 
 export interface Staff {

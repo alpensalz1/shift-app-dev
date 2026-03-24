@@ -43,7 +43,6 @@ interface RequestWithStaff extends ShiftRequest {
 
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土']
 const SHOP_NAMES: Record<number, string> = { 1: '三軒茶屋', 2: '下北沢', 3: 'おにぎり' }
-const ONIGIRI_SHOP_ID = 3
 
 // =============================================
 // タブ1: シフト確定（既存機能）
@@ -1239,10 +1238,10 @@ function ShiftAdjustTab() {
     }
 
     // work or limited → 店舗サイクル（全店舗を一周したら作業日 → 割当休）
-    // おにぎりは土日のみ表示（平日はサイクルから除外）
+    // weekend_only=trueの店舗は土日のみサイクルに含める
     const dow = new Date(ds + 'T00:00:00').getDay()
     const isWeekend = dow === 0 || dow === 6
-    const activeShops = shops.filter(sh => sh.is_active !== false && (sh.id !== ONIGIRI_SHOP_ID || isWeekend))
+    const activeShops = shops.filter(sh => sh.is_active !== false && (!sh.weekend_only || isWeekend))
     if (activeShops.length < 2) {
       // 店舗が1つの場合: work → 作業日 → 割当休 → work
       if (state === 'work') {
@@ -1343,9 +1342,10 @@ function ShiftAdjustTab() {
 
           // Use per-cell shop if set, otherwise fall back to staff's default
           const shopId = getCellShopId(staff.id, ds, staff.shop_id)
+          const shopInfo = shops.find(sh => sh.id === shopId)
 
-          // おにぎり: 12:00-18:00固定・営業1レコードのみ
-          if (shopId === ONIGIRI_SHOP_ID) {
+          // weekend_only店舗（おにぎり等）: 12:00-18:00固定・営業1レコードのみ
+          if (shopInfo?.weekend_only) {
             toInsert.push({
               date: ds, shop_id: shopId, staff_id: staff.id, type: '営業',
               start_time: '12:00:00', end_time: '18:00:00',
