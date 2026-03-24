@@ -196,8 +196,11 @@ export default function HistoryPage() {
                   const hasPrep = dayShifts?.some((s) => s.type === '仕込み')
                   const hasService = dayShifts?.some((s) => s.type === '営業')
                   const hasTask = dayShifts?.some((s) => s.type === '作業日')
+                  const isOnigiriOnly = hasShift && dayShifts!.every((s) => s.shop_id === 3)
                   const bgColor = hasShift
-                    ? hasPrep && hasService
+                    ? isOnigiriOnly
+                      ? 'bg-violet-500'
+                      : hasPrep && hasService
                       ? 'bg-indigo-500'
                       : hasPrep
                       ? 'bg-amber-500'
@@ -246,7 +249,7 @@ export default function HistoryPage() {
           </div>
 
           {/* 凡例 */}
-          <div className="flex items-center gap-4 px-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-amber-500 inline-block" />
               仕込み
@@ -258,6 +261,10 @@ export default function HistoryPage() {
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-indigo-500 inline-block" />
               両方
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-violet-500 inline-block" />
+              おにぎり
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-purple-500 inline-block" />
@@ -326,7 +333,11 @@ export default function HistoryPage() {
                               >
                                 {/* 店舗バッジ */}
                                 {s.shop_id && SHOPS[s.shop_id] && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 bg-zinc-100 text-zinc-600">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                                    s.shop_id === 3 ? 'bg-violet-100 text-violet-700' :
+                                    s.shop_id === 2 ? 'bg-teal-100 text-teal-700' :
+                                    'bg-indigo-100 text-indigo-700'
+                                  }`}>
                                     {SHOPS[s.shop_id]}
                                   </span>
                                 )}

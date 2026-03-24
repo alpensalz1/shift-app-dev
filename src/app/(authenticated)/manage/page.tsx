@@ -285,24 +285,31 @@ function ShiftConfirmTab() {
 
   const staffingStatus = useMemo(() => {
     if (!selectedDate) return []
-    return configs.map((cfg) => {
-      const filled = selectedFixed.filter((f) => f.shop_id === cfg.shop_id && f.type === cfg.type).length
-      const filledEmployees = selectedFixed.filter((f) =>
-        f.shop_id === cfg.shop_id &&
-        f.type === cfg.type &&
-        ['社員', '役員'].includes(allStaffs.find((s) => s.id === f.staff_id)?.employment_type ?? '')
-      ).length
-      return {
-        shopId: cfg.shop_id,
-        shopName: SHOP_NAMES[cfg.shop_id] || String(cfg.shop_id),
-        type: cfg.type,
-        required: cfg.required_count,
-        filled,
-        diff: filled - cfg.required_count,
-        filledEmployees,
-      }
-    })
-  }, [selectedDate, selectedFixed, configs])
+    return configs
+      .filter((cfg) => {
+        // weekend_only 店舗（おにぎり等）は土日のみ表示
+        const shopInfo = shops.find((s) => s.id === cfg.shop_id)
+        if (shopInfo?.weekend_only) return isWeekendDate
+        return true
+      })
+      .map((cfg) => {
+        const filled = selectedFixed.filter((f) => f.shop_id === cfg.shop_id && f.type === cfg.type).length
+        const filledEmployees = selectedFixed.filter((f) =>
+          f.shop_id === cfg.shop_id &&
+          f.type === cfg.type &&
+          ['社員', '役員'].includes(allStaffs.find((s) => s.id === f.staff_id)?.employment_type ?? '')
+        ).length
+        return {
+          shopId: cfg.shop_id,
+          shopName: SHOP_NAMES[cfg.shop_id] || String(cfg.shop_id),
+          type: cfg.type,
+          required: cfg.required_count,
+          filled,
+          diff: filled - cfg.required_count,
+          filledEmployees,
+        }
+      })
+  }, [selectedDate, selectedFixed, configs, shops, isWeekendDate])
 
   const handleConfirm = async (req: RequestWithStaff, shopId: number, type: '仕込み' | '営業') => {
     setConfirming(true)

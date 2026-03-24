@@ -20,11 +20,11 @@ const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 
 const COLORS: Record<number, { card: string; border: string; icon: string; badge: string; highlight: string }> = {
   1: {
-    // 三軒茶屋: indigo（manageページと統一）
-    card: 'bg-gradient-to-br from-indigo-50/80 to-blue-50/40',
-    border: 'border-l-[3px] border-l-indigo-400',
-    icon: 'text-indigo-600',
-    badge: 'bg-indigo-100/80 text-indigo-700',
+    // 三軒茶屋: indigo（manageページと統一・視認性向上）
+    card: 'bg-gradient-to-br from-indigo-100/70 to-indigo-50/50',
+    border: 'border-l-[4px] border-l-indigo-500',
+    icon: 'text-indigo-700',
+    badge: 'bg-indigo-200/90 text-indigo-800',
     highlight: 'bg-indigo-500',
   },
   2: {
