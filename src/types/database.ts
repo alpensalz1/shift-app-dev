@@ -61,7 +61,7 @@ export interface OffRequest {
   id: number
   staff_id: number
   date: string
-  type: '休み' | '仕込みのみ' | '営業のみ'
+  type: '休み' | '仕込みのみ' | '営業のみ' | 'おにぎりのみ'
   created_at: string
   updated_at: string
 }

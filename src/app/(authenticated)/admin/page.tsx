@@ -1328,6 +1328,7 @@ function SubmissionStatusTab() {
 function BonusTab({ month }: { month: string }) {
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [shifts, setShifts] = useState<ShiftFixed[]>([])
+  const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
@@ -1340,12 +1341,15 @@ function BonusTab({ month }: { month: string }) {
     Promise.all([
       supabase.from('staffs').select('*').in('employment_type', ['社員', '役員']).is('deleted_at', null).order('id'),
       supabase.from('shifts_fixed').select('*').gte('date', startDate).lte('date', endDate),
-    ]).then(([sR, shR]) => {
+      supabase.from('shops').select('*'),
+    ]).then(([sR, shR, spR]) => {
       if (cancelled) return
       if (sR.error) console.error('staffs取得失敗:', sR.error.message)
       else setStaffs(sR.data || [])
       if (shR.error) console.error('shifts_fixed取得失敗:', shR.error.message)
       else setShifts(shR.data || [])
+      if (spR.error) console.error('shops取得失敗:', spR.error.message)
+      else setShops(spR.data || [])
       setLoading(false)
     })
     return () => { cancelled = true }
@@ -1371,18 +1375,22 @@ function BonusTab({ month }: { month: string }) {
       byDate.get(d)!.push(sh)
     })
 
-    const days: { date: string; bonusDays: number; startMin: number; endMin: number }[] = []
+    const days: { date: string; bonusDays: number; startMin: number; endMin: number; isWeekendOnly: boolean }[] = []
     byDate.forEach((dayShifts, date) => {
       const startMin = Math.min(...dayShifts.map(sh => toMin(sh.start_time)))
       const endMin = Math.max(...dayShifts.map(sh => toMin(sh.end_time || '24:00:00')))
-      // 判定: 開始 ≤ 14:00 かつ 終了 ≥ 23:00 → 1日 / それ以外 → 0.5日
-      const bonusDays = startMin <= 14 * 60 && endMin >= 23 * 60 ? 1 : 0.5
-      days.push({ date, bonusDays, startMin, endMin })
+      // 週末限定店舗（おにぎり等）のシフトのみの日は常に0.5日
+      const isWeekendOnly = dayShifts.every(sh =>
+        sh.shop_id != null && shops.find(sp => sp.id === sh.shop_id)?.weekend_only === true
+      )
+      // 判定: 週末限定店舗のみ → 0.5日 / 開始 ≤ 14:00 かつ 終了 ≥ 23:00 → 1日 / それ以外 → 0.5日
+      const bonusDays = (!isWeekendOnly && startMin <= 14 * 60 && endMin >= 23 * 60) ? 1 : 0.5
+      days.push({ date, bonusDays, startMin, endMin, isWeekendOnly })
     })
     days.sort((a, b) => a.date.localeCompare(b.date))
     const total = days.reduce((sum, d) => sum + d.bonusDays, 0)
     return { staff: s, days, total }
-  }), [staffs, shifts])
+  }), [staffs, shifts, shops])
 
   const [y, m] = month.split('-').map(Number)
   const ml = `${y}年${m}月`
@@ -1410,7 +1418,7 @@ function BonusTab({ month }: { month: string }) {
         <p className="text-2xl font-extrabold text-amber-900 tabular-nums">
           {grandTotal.toFixed(1)}<span className="text-sm font-medium ml-1">日分</span>
         </p>
-        <p className="text-[10px] text-amber-600/60 mt-1">判定: 開始≤14:00 かつ 終了≥23:00 → 1日 / それ以外 → 0.5日</p>
+        <p className="text-[10px] text-amber-600/60 mt-1">判定: 開始≤14:00 かつ 終了≥23:00 → 1日 / それ以外 → 0.5日（週末限定店舗は常に 0.5日）</p>
       </div>
 
       {/* スタッフ別内訳 */}
@@ -1443,7 +1451,7 @@ function BonusTab({ month }: { month: string }) {
                 <p className="text-[11px] text-muted-foreground px-3 py-3">この月のシフトなし</p>
               ) : (
                 <div className="divide-y divide-border/20">
-                  {days.map(({ date, bonusDays, startMin, endMin }) => {
+                  {days.map(({ date, bonusDays, startMin, endMin, isWeekendOnly }) => {
                     const dow = new Date(date + 'T00:00:00').getDay()
                     const [, mm, dd] = date.split('-')
                     const is1 = bonusDays === 1
@@ -1453,9 +1461,13 @@ function BonusTab({ month }: { month: string }) {
                           <span className={`text-[11px] font-medium tabular-nums w-[52px] ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : ''}`}>
                             {mm}/{dd}({DOW_JP[dow]})
                           </span>
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
-                            {fmtMin(startMin)}–{fmtMin(endMin)}
-                          </span>
+                          {isWeekendOnly ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium">おにぎり</span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                              {fmtMin(startMin)}–{fmtMin(endMin)}
+                            </span>
+                          )}
                         </div>
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${is1 ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-500'}`}>
                           {is1 ? '1.0日' : '0.5日'}

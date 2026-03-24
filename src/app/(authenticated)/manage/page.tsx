@@ -120,6 +120,7 @@ function ShiftConfirmTab() {
   const [fixedShifts, setFixedShifts] = useState<ShiftFixed[]>([])
   const [configs, setConfigs] = useState<ShiftConfig[]>([])
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
+  const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
   const [confirming, setConfirming] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -143,7 +144,7 @@ function ShiftConfirmTab() {
   const fetchAll = useCallback(async () => {
     const version = ++fetchVersionRef.current
     setLoading(true)
-    const [reqRes, fixedRes, configRes, staffRes, closedRes, offRes] = await Promise.all([
+    const [reqRes, fixedRes, configRes, staffRes, closedRes, offRes, shopsRes] = await Promise.all([
       supabase.from('shift_requests').select('*, staffs(name, employment_type)')
         .gte('date', monthStart).lte('date', monthEnd).order('date', { ascending: true }),
       supabase.from('shifts_fixed').select('*')
@@ -152,6 +153,7 @@ function ShiftConfirmTab() {
       supabase.from('staffs').select('*').eq('is_active', true),
       supabase.from('closed_dates').select('date').gte('date', monthStart).lte('date', monthEnd),
       supabase.from('off_requests').select('*').gte('date', monthStart).lte('date', monthEnd),
+      supabase.from('shops').select('*').eq('is_active', true).order('id'),
     ])
     // 月切替により新しいfetchが開始されていたら古い結果は破棄する
     if (fetchVersionRef.current !== version) return
@@ -167,6 +169,8 @@ function ShiftConfirmTab() {
     else if (closedRes.data) setClosedDates(closedRes.data.map((c: {date: string}) => c.date.substring(0, 10)))
     if (offRes.error) console.error('off_requests取得失敗:', offRes.error.message)
     else if (offRes.data) setOffRequests(offRes.data as OffRequest[])
+    if (shopsRes.error) console.error('shops取得失敗:', shopsRes.error.message)
+    else if (shopsRes.data) setShops(shopsRes.data as Shop[])
     setLoading(false)
   }, [monthStart, monthEnd])
 
@@ -263,6 +267,16 @@ function ShiftConfirmTab() {
     return { firstOk: pF===0 && fF>0, secondOk: pS===0 && fS>0, fp: pF, sp: pS }
   }, [requests, fixedShifts])
 
+  // 選択日が週末（土日）かどうか（週末限定店舗の表示判定に使用）
+  const isWeekendDate = useMemo(() => {
+    if (!selectedDate) return false
+    const dow = new Date(selectedDate + 'T00:00:00').getDay()
+    return dow === 0 || dow === 6
+  }, [selectedDate])
+
+  // 週末限定店舗（おにぎり等）
+  const weekendOnlyShops = useMemo(() => shops.filter(s => s.weekend_only), [shops])
+
   const typeOrder: Record<string, number> = { '社員': 0, 'アルバイト': 1, '役員': 2, 'システム管理者': 3 }
   const selectedRequests = (selectedDate ? (dateMap[selectedDate] || []) : [])
     .slice()
@@ -330,6 +344,29 @@ function ShiftConfirmTab() {
       if (error) { setMessage('取り消しに失敗: ' + error.message); return }
       setMessage('シフトを取り消しました')
       fetchAll()
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  // アルバイト申請をおにぎりで確定（12:00-18:00固定、週末限定）
+  const handleOnigiriConfirm = async (req: RequestWithStaff) => {
+    setConfirming(true)
+    setMessage('')
+    const onigiriShop = shops.find(s => s.weekend_only)
+    const shopId = onigiriShop?.id ?? 3
+    try {
+      await supabase.from('shifts_fixed')
+        .delete()
+        .eq('staff_id', req.staff_id)
+        .eq('date', req.date)
+        .eq('shop_id', shopId)
+      const { error } = await supabase.from('shifts_fixed').insert({
+        date: req.date, shop_id: shopId, type: '営業',
+        staff_id: req.staff_id, start_time: '12:00:00', end_time: '18:00:00',
+      })
+      if (error) { setMessage('おにぎり確定に失敗: ' + error.message); fetchAll() }
+      else { setMessage(`${req.staffs.name}のシフトをおにぎりで確定しました`); fetchAll() }
     } finally {
       setConfirming(false)
     }
@@ -403,18 +440,27 @@ function ShiftConfirmTab() {
     if (!window.confirm(`未処理の${pendingReqs.length}件を全て${SHOP_NAMES[shopId]}で確定します。よろしいですか？`)) return
     setConfirming(true)
     setMessage('')
+    const isWeekendOnlyShop = shops.find(s => s.id === shopId)?.weekend_only === true
     try {
       for (const req of pendingReqs) {
-        const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
-        const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
         await supabase.from('shifts_fixed').delete().eq('staff_id', req.staff_id).eq('date', req.date)
-        if (splits.length > 0) {
-          await supabase.from('shifts_fixed').insert(
-            splits.map((s) => ({
-              date: req.date, shop_id: shopId, type: s.type,
-              staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
-            }))
-          )
+        if (isWeekendOnlyShop) {
+          // 週末限定店舗（おにぎり等）: 12:00-18:00 固定・営業のみ
+          await supabase.from('shifts_fixed').insert({
+            date: req.date, shop_id: shopId, type: '営業',
+            staff_id: req.staff_id, start_time: '12:00:00', end_time: '18:00:00',
+          })
+        } else {
+          const isPartTimer = req.staffs.employment_type === 'アルバイト' || req.staffs.employment_type === 'システム管理者'
+          const splits = autoSplitShift(req.start_time, req.end_time, shopId, configs, isPartTimer ? '14:00' : undefined)
+          if (splits.length > 0) {
+            await supabase.from('shifts_fixed').insert(
+              splits.map((s) => ({
+                date: req.date, shop_id: shopId, type: s.type,
+                staff_id: req.staff_id, start_time: s.start_time, end_time: s.end_time,
+              }))
+            )
+          }
         }
       }
       setMessage(`${pendingReqs.length}件を${SHOP_NAMES[shopId]}で一括確定しました`)
@@ -799,21 +845,33 @@ function ShiftConfirmTab() {
                   }).length
                   if (pendingCount < 2) return null
                   return (
-                    <div className="flex gap-2 mb-3">
-                      <button
-                        onClick={() => handleBatchConfirm(1)}
-                        disabled={confirming}
-                        className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[1]}`}
-                      >
-                        未処理を全員 三茶で確定（{pendingCount}件）
-                      </button>
-                      <button
-                        onClick={() => handleBatchConfirm(2)}
-                        disabled={confirming}
-                        className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[2]}`}
-                      >
-                        未処理を全員 下北で確定（{pendingCount}件）
-                      </button>
+                    <div className="space-y-1.5 mb-3">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleBatchConfirm(1)}
+                          disabled={confirming}
+                          className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[1]}`}
+                        >
+                          全員 三茶で確定（{pendingCount}件）
+                        </button>
+                        <button
+                          onClick={() => handleBatchConfirm(2)}
+                          disabled={confirming}
+                          className={`flex-1 h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[2]}`}
+                        >
+                          全員 下北で確定（{pendingCount}件）
+                        </button>
+                      </div>
+                      {isWeekendDate && weekendOnlyShops.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => handleBatchConfirm(s.id)}
+                          disabled={confirming}
+                          className={`w-full h-8 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-colors press-effect ${SHOP_BTN[s.id] ?? 'bg-violet-600 hover:bg-violet-700'}`}
+                        >
+                          全員 {s.name}で確定（{pendingCount}件）
+                        </button>
+                      ))}
                     </div>
                   )
                 })()}
@@ -870,9 +928,12 @@ function ShiftConfirmTab() {
                             {/* 案A: 仕込み・営業は主ボタン2つ＋詳細トグル */}
                             {req.type === '仕込み・営業' ? (
                               <>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 flex-wrap">
                                   <Button size="sm" className={`flex-1 h-8 text-xs text-white ${SHOP_BTN[1]}`} disabled={confirming} onClick={() => handleAutoConfirm(req, 1)}>三茶で確定</Button>
                                   <Button size="sm" className={`flex-1 h-8 text-xs text-white ${SHOP_BTN[2]}`} disabled={confirming} onClick={() => handleAutoConfirm(req, 2)}>下北で確定</Button>
+                                  {isWeekendDate && weekendOnlyShops.map(s => (
+                                    <Button key={s.id} size="sm" className={`flex-1 h-8 text-xs text-white ${SHOP_BTN[s.id] ?? 'bg-violet-600 hover:bg-violet-700'}`} disabled={confirming} onClick={() => handleOnigiriConfirm(req)}>{s.name}で確定</Button>
+                                  ))}
                                   <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
                                 </div>
                                 <button
@@ -919,6 +980,9 @@ function ShiftConfirmTab() {
                                     {canAssignShiftType(req.start_time, req.end_time, 2, '営業', configs) && (
                                       <Button size="sm" variant="outline" className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" disabled={confirming} onClick={() => handleConfirm(req, 2, '営業')}>下北 営業</Button>
                                     )}
+                                    {isWeekendDate && weekendOnlyShops.map(s => (
+                                      <Button key={s.id} size="sm" variant="outline" className="h-8 text-xs border-violet-300 text-violet-700 hover:bg-violet-50" disabled={confirming} onClick={() => handleOnigiriConfirm(req)}>{s.name} 営業</Button>
+                                    ))}
                                   </>
                                 )}
                                 <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-300 hover:bg-red-50" disabled={confirming} onClick={() => handleReject(req)}>却下</Button>
@@ -1028,6 +1092,7 @@ function ShiftConfirmTab() {
 // =============================================
 function RulesTab() {
   const [allStaffs, setAllStaffs] = useState<Staff[]>([])
+  const [regularShops, setRegularShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -1036,9 +1101,11 @@ function RulesTab() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [staffsRes, rulesRes] = await Promise.all([
+    const [staffsRes, rulesRes, shopsRes] = await Promise.all([
       supabase.from('staffs').select('*').eq('is_active', true).eq('employment_type', '社員'),
       supabase.from('shift_rules').select('*'),
+      // 通常店舗のみ（週末限定店舗は配属対象外）
+      supabase.from('shops').select('*').eq('is_active', true).neq('weekend_only', true).order('id'),
     ])
     if (staffsRes.error) console.error('staffs取得失敗:', staffsRes.error.message)
     else if (staffsRes.data) setAllStaffs(staffsRes.data)
@@ -1051,6 +1118,8 @@ function RulesTab() {
       })
       setAssignments(map)
     }
+    if (shopsRes.error) console.error('shops取得失敗:', shopsRes.error.message)
+    else if (shopsRes.data) setRegularShops(shopsRes.data as Shop[])
     setLoading(false)
   }, [])
 
@@ -1091,24 +1160,32 @@ function RulesTab() {
 
   const shopCount = (shopId: number) => allStaffs.filter(s => (assignments[s.id] ?? 0) === shopId).length
 
+  // 店舗IDからTailwindクラスを返す（SHOP_BADGE定数を使用）
+  const shopSelectClass = (shopId: number) => {
+    const badge = SHOP_BADGE[shopId]
+    if (!badge) return 'border-input bg-background text-muted-foreground'
+    // bg-indigo-100 → border-indigo-300 に変換
+    return badge.replace('bg-', 'border-').replace('-100', '-300').replace('text-', '') + ' ' + badge
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        社員ごとの配属店舗を設定します。ここで設定した配属先が、シフト調整画面でのデフォルト出勤店舗として反映されます。
+        社員ごとの配属店舗を設定します。ここで設定した配属先が、シフト調整画面でのデフォルト出勤店舗として反映されます。週末限定店舗（おにぎり等）は個別確定で対応します。
       </p>
 
-      {/* 配属先サマリー */}
-      <div className="grid grid-cols-3 gap-2">
-        {[{ id: 1, label: '三軒茶屋' }, { id: 2, label: '下北沢' }, { id: 0, label: '未設定' }].map(({ id, label }) => (
-          <div key={id} className={`text-center py-2.5 rounded-lg text-xs font-medium border ${
-            id === 1 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-            id === 2 ? 'bg-blue-50 border-blue-200 text-blue-700' :
-            'bg-zinc-50 border-zinc-200 text-zinc-500'
-          }`}>
-            <div className="text-lg font-bold">{shopCount(id)}</div>
-            <div>{label}</div>
+      {/* 配属先サマリー（動的） */}
+      <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${regularShops.length + 1}, 1fr)` }}>
+        {regularShops.map(sp => (
+          <div key={sp.id} className={`text-center py-2.5 rounded-lg text-xs font-medium border ${SHOP_BADGE[sp.id] ? SHOP_BADGE[sp.id].replace('text-', 'border-').replace(/\d+$/, '200') + ' ' + SHOP_BADGE[sp.id] : 'bg-zinc-50 border-zinc-200 text-zinc-500'}`}>
+            <div className="text-lg font-bold">{shopCount(sp.id)}</div>
+            <div>{sp.name}</div>
           </div>
         ))}
+        <div className="text-center py-2.5 rounded-lg text-xs font-medium border bg-zinc-50 border-zinc-200 text-zinc-500">
+          <div className="text-lg font-bold">{shopCount(0)}</div>
+          <div>未設定</div>
+        </div>
       </div>
 
       <Card>
@@ -1116,21 +1193,21 @@ function RulesTab() {
           <div className="divide-y">
             {allStaffs.map((staff) => {
               const assigned = assignments[staff.id] ?? 0
+              const selClass = assigned > 0
+                ? `${SHOP_BADGE[assigned]?.replace('bg-', 'border-').replace('-100', '-300') ?? 'border-input'} ${SHOP_BADGE[assigned] ?? ''}`
+                : 'border-input bg-background text-muted-foreground'
               return (
                 <div key={staff.id} className="flex items-center gap-3 py-3">
                   <span className="text-sm font-medium flex-1">{staff.name}</span>
                   <select
                     value={assigned}
                     onChange={(e) => handleAssignmentChange(staff.id, Number(e.target.value))}
-                    className={`h-9 rounded-md border px-2 text-sm transition-colors ${
-                      assigned === 1 ? 'border-emerald-300 bg-emerald-50 text-emerald-800' :
-                      assigned === 2 ? 'border-blue-300 bg-blue-50 text-blue-800' :
-                      'border-input bg-background text-muted-foreground'
-                    }`}
+                    className={`h-9 rounded-md border px-2 text-sm transition-colors ${selClass}`}
                   >
                     <option value={0}>未設定</option>
-                    <option value={1}>三軒茶屋</option>
-                    <option value={2}>下北沢</option>
+                    {regularShops.map(sp => (
+                      <option key={sp.id} value={sp.id}>{sp.name}</option>
+                    ))}
                   </select>
                 </div>
               )

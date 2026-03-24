@@ -43,7 +43,7 @@ import { Button } from '@/components/ui/button'
 // 型定義・定数
 // =============================================
 
-type DayChoice = '休み' | '仕込みのみ' | '営業のみ'
+type DayChoice = '休み' | '仕込みのみ' | '営業のみ' | 'おにぎりのみ'
 type DayChoiceMap = Record<string, DayChoice>
 
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -63,6 +63,7 @@ const CHOICE_CYCLE: (DayChoice | undefined)[] = [
   '休み',
   '仕込みのみ',
   '営業のみ',
+  'おにぎりのみ',
 ]
 
 const CHOICE_STYLES: Record<
@@ -72,6 +73,7 @@ const CHOICE_STYLES: Record<
   休み: { bg: 'bg-red-400', text: 'text-white', badge: '休' },
   仕込みのみ: { bg: 'bg-amber-400', text: 'text-white', badge: '仕' },
   営業のみ: { bg: 'bg-indigo-500', text: 'text-white', badge: '営' },
+  おにぎりのみ: { bg: 'bg-violet-500', text: 'text-white', badge: 'お' },
 }
 
 // =============================================
@@ -744,13 +746,10 @@ function FullTimeForm({
   const firstDow = getDay(days[0])
   const totalDays = days.length
   const restCount = Object.values(choices).filter((v) => v === '休み').length
-  const prepCount = Object.values(choices).filter(
-    (v) => v === '仕込みのみ'
-  ).length
-  const serviceCount = Object.values(choices).filter(
-    (v) => v === '営業のみ'
-  ).length
-  const fullCount = totalDays - restCount - prepCount - serviceCount
+  const prepCount = Object.values(choices).filter((v) => v === '仕込みのみ').length
+  const serviceCount = Object.values(choices).filter((v) => v === '営業のみ').length
+  const onigiriCount = Object.values(choices).filter((v) => v === 'おにぎりのみ').length
+  const fullCount = totalDays - restCount - prepCount - serviceCount - onigiriCount
 
   return (
     <div className="space-y-3 animate-slide-up">
@@ -761,28 +760,24 @@ function FullTimeForm({
         </p>
         <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="w-5 h-5 rounded-lg bg-white border border-border/50 inline-flex items-center justify-center text-[10px] text-foreground">
-              日
-            </span>
+            <span className="w-5 h-5 rounded-lg bg-white border border-border/50 inline-flex items-center justify-center text-[10px] text-foreground">日</span>
             フル出勤
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-5 h-5 rounded-lg bg-red-400 inline-flex items-center justify-center text-white text-[10px]">
-              休
-            </span>
+            <span className="w-5 h-5 rounded-lg bg-red-400 inline-flex items-center justify-center text-white text-[10px]">休</span>
             休む
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-5 h-5 rounded-lg bg-amber-400 inline-flex items-center justify-center text-white text-[10px]">
-              仕
-            </span>
+            <span className="w-5 h-5 rounded-lg bg-amber-400 inline-flex items-center justify-center text-white text-[10px]">仕</span>
             仕込みのみ
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-5 h-5 rounded-lg bg-indigo-500 inline-flex items-center justify-center text-white text-[10px]">
-              営
-            </span>
+            <span className="w-5 h-5 rounded-lg bg-indigo-500 inline-flex items-center justify-center text-white text-[10px]">営</span>
             営業のみ
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-5 h-5 rounded-lg bg-violet-500 inline-flex items-center justify-center text-white text-[10px]">お</span>
+            おにぎりのみ
           </span>
         </div>
       </div>
@@ -832,21 +827,22 @@ function FullTimeForm({
       </div>
 
       {/* サマリー */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-5 gap-1.5">
         {[
           { label: 'フル', value: fullCount, color: 'text-foreground' },
           { label: '休み', value: restCount, color: 'text-red-500' },
           { label: '仕込み', value: prepCount, color: 'text-amber-600' },
           { label: '営業', value: serviceCount, color: 'text-indigo-600' },
+          { label: 'おにぎり', value: onigiriCount, color: 'text-violet-600' },
         ].map(({ label, value, color }) => (
           <div
             key={label}
-            className="bg-muted/30 rounded-xl px-2 py-2 text-center"
+            className="bg-muted/30 rounded-xl px-1 py-2 text-center"
           >
             <p className={`text-xl font-bold tabular-nums ${color}`}>
               {value}
             </p>
-            <p className="text-[10px] text-muted-foreground">{label}</p>
+            <p className="text-[9px] text-muted-foreground">{label}</p>
           </div>
         ))}
       </div>
