@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredStaff } from '@/lib/auth'
-import { Staff, ShiftFixed, ShiftConfig, Shop } from '@/types/database'
+import { Staff, ShiftFixed, ShiftConfig, Shop, ShiftRequest } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { calcWage, calcHours, getSubmissionPeriod } from '@/lib/utils'
@@ -12,9 +12,9 @@ import { format, addDays, endOfMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   BarChart2, Users, CalendarOff, TrendingUp, FileText,
-  ChevronLeft, ChevronRight, Loader2, Plus,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Loader2, Plus,
   DollarSign, AlertTriangle, CheckCircle, X, Clock, Briefcase, RefreshCw,
-  ClipboardList, XCircle
+  ClipboardList, XCircle, Trash2, RotateCcw
 } from 'lucide-react'
 
 type Tab = 'labor' | 'staff' | 'closed' | 'report' | 'submission'
@@ -997,14 +997,14 @@ function MonthlyReportTab({ month }: { month: string }) {
 /* ── 提出状況タブ ── */
 function SubmissionStatusTab() {
   const [staffs, setStaffs] = useState<Staff[]>([])
-  const [submittedPartIds, setSubmittedPartIds] = useState<Set<number>>(new Set())
+  const [requests, setRequests] = useState<ShiftRequest[]>([])
   const [submittedFullIds, setSubmittedFullIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  // 0=現在の対象期間、負の値=過去へ
   const [periodOffset, setPeriodOffset] = useState(0)
+  const [expandedStaffId, setExpandedStaffId] = useState<number | null>(null)
+  const [operating, setOperating] = useState<number | null>(null)
 
-  // 選択期間を計算（getSubmissionPeriod の基準からオフセット分ずらす）
   const selectedPeriod = useMemo(() => {
     const base = getSubmissionPeriod(new Date())
     let start = new Date(base.start)
@@ -1043,24 +1043,147 @@ function SubmissionStatusTab() {
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
-    const [staffRes, partReqs, fullReqs] = await Promise.all([
+    const [staffRes, reqRes, fullReqs] = await Promise.all([
       supabase.from('staffs').select('*').eq('is_active', true).neq('employment_type', 'システム管理者').order('name'),
-      supabase.from('shift_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
+      supabase.from('shift_requests').select('*').gte('date', periodStart).lte('date', periodEnd).order('date', { ascending: true }),
       supabase.from('off_requests').select('staff_id').gte('date', periodStart).lte('date', periodEnd),
     ])
     setStaffs(staffRes.data || [])
-    setSubmittedPartIds(new Set((partReqs.data || []).map((r: any) => r.staff_id)))
+    setRequests(reqRes.data || [])
     setSubmittedFullIds(new Set((fullReqs.data || []).map((r: any) => r.staff_id)))
     if (isRefresh) setRefreshing(false)
     else setLoading(false)
   }, [periodStart, periodEnd])
 
   useEffect(() => { load() }, [load])
+  // 期間切替時に展開を閉じる
+  useEffect(() => { setExpandedStaffId(null) }, [periodStart, periodEnd])
+
+  const requestsByStaff = useMemo(() => {
+    const map = new Map<number, ShiftRequest[]>()
+    for (const r of requests) {
+      if (!map.has(r.staff_id)) map.set(r.staff_id, [])
+      map.get(r.staff_id)!.push(r)
+    }
+    return map
+  }, [requests])
+
+  const handleDelete = async (requestId: number) => {
+    if (operating !== null) return
+    setOperating(requestId)
+    const { error } = await supabase.from('shift_requests').update({ status: 'deleted' }).eq('id', requestId)
+    if (error) console.error('削除失敗:', error.message)
+    else setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'deleted' as const } : r))
+    setOperating(null)
+  }
+
+  const handleRestore = async (requestId: number) => {
+    if (operating !== null) return
+    setOperating(requestId)
+    const { error } = await supabase.from('shift_requests').update({ status: 'pending' }).eq('id', requestId)
+    if (error) console.error('復元失敗:', error.message)
+    else setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'pending' as const } : r))
+    setOperating(null)
+  }
 
   const partTimers = staffs.filter(s => s.employment_type === 'アルバイト')
   const fullTimers = staffs.filter(s => s.employment_type === '社員' || s.employment_type === '役員')
-  const partSubmitted    = partTimers.filter(s =>  submittedPartIds.has(s.id))
-  const partNotSubmitted = partTimers.filter(s => !submittedPartIds.has(s.id))
+
+  // 有効なリクエスト（deleted以外）が1件以上ある → 提出済み
+  // リクエストが存在するが全てdeleted → 削除済み
+  // リクエスト0件 → 未提出
+  const partSubmitted    = partTimers.filter(s => (requestsByStaff.get(s.id) || []).some(r => r.status !== 'deleted'))
+  const partAllDeleted   = partTimers.filter(s => { const rs = requestsByStaff.get(s.id) || []; return rs.length > 0 && rs.every(r => r.status === 'deleted') })
+  const partNotSubmitted = partTimers.filter(s => (requestsByStaff.get(s.id) || []).length === 0)
+
+  const DOW = ['日', '月', '火', '水', '木', '金', '土']
+  function fmtDateLabel(dateStr: string) {
+    const d = new Date(dateStr.substring(0, 10) + 'T00:00:00')
+    return `${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]})`
+  }
+
+  function renderPartRow(s: Staff, statusType: 'submitted' | 'allDeleted') {
+    const reqs = (requestsByStaff.get(s.id) || []).slice().sort((a, b) => a.date.localeCompare(b.date))
+    const isExpanded = expandedStaffId === s.id
+    const activeCount = reqs.filter(r => r.status !== 'deleted').length
+    const deletedCount = reqs.filter(r => r.status === 'deleted').length
+    return (
+      <div key={s.id}>
+        <div
+          className={`flex items-center justify-between px-3 py-2.5 cursor-pointer select-none transition-colors ${isExpanded ? 'bg-muted/20' : 'hover:bg-muted/10'}`}
+          onClick={() => setExpandedStaffId(isExpanded ? null : s.id)}
+        >
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-sm font-medium truncate">{s.name}</span>
+            {activeCount > 0 && (
+              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium shrink-0">
+                {activeCount}日
+              </span>
+            )}
+            {deletedCount > 0 && (
+              <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium shrink-0">
+                削除済み{deletedCount}件
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            {statusType === 'submitted'
+              ? <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700"><CheckCircle className="h-3.5 w-3.5" />提出済み</span>
+              : <span className="flex items-center gap-1 text-xs font-semibold text-gray-500"><XCircle className="h-3.5 w-3.5" />削除済み</span>
+            }
+            {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="border-t border-border/30 bg-muted/10 px-3 py-2 space-y-1.5">
+            {reqs.length === 0 && (
+              <p className="text-xs text-muted-foreground py-1">申請データがありません</p>
+            )}
+            {reqs.map(req => (
+              <div
+                key={req.id}
+                className={`flex items-center justify-between py-1.5 px-2.5 rounded-lg text-sm ${req.status === 'deleted' ? 'bg-gray-50 opacity-60' : 'bg-white ring-1 ring-border/40'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground w-16 shrink-0">
+                    {fmtDateLabel(req.date)}
+                  </span>
+                  <span className="text-xs font-medium">
+                    {req.start_time.substring(0, 5)}〜{req.end_time.substring(0, 5)}
+                  </span>
+                  {req.status === 'deleted' && (
+                    <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded font-medium">削除済み</span>
+                  )}
+                </div>
+                <div>
+                  {req.status === 'deleted' ? (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleRestore(req.id) }}
+                      disabled={operating !== null}
+                      className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40 transition-colors"
+                    >
+                      {operating === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                      復元
+                    </button>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDelete(req.id) }}
+                      disabled={operating !== null}
+                      className="flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 font-medium disabled:opacity-40 transition-colors"
+                    >
+                      {operating === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      削除
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -1126,17 +1249,18 @@ function SubmissionStatusTab() {
 
             {partSubmitted.length > 0 && (
               <div>
-                <p className="text-[10px] text-emerald-600 font-semibold mb-1 px-0.5">提出済み</p>
+                <p className="text-[10px] text-emerald-600 font-semibold mb-1 px-0.5">提出済み（タップで詳細・削除）</p>
                 <div className="rounded-xl bg-emerald-50 border border-emerald-200 divide-y divide-emerald-100 overflow-hidden">
-                  {partSubmitted.map(s => (
-                    <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
-                      <span className="text-sm font-medium">{s.name}</span>
-                      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                        <CheckCircle className="h-3.5 w-3.5" />
-                        提出済み
-                      </span>
-                    </div>
-                  ))}
+                  {partSubmitted.map(s => renderPartRow(s, 'submitted'))}
+                </div>
+              </div>
+            )}
+
+            {partAllDeleted.length > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-semibold mb-1 px-0.5">削除済み（タップで復元可）</p>
+                <div className="rounded-xl bg-gray-50 border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                  {partAllDeleted.map(s => renderPartRow(s, 'allDeleted'))}
                 </div>
               </div>
             )}
